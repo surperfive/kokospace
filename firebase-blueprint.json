@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Cross-platform synced user avatar and preferred map configuration (no PII stored).",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "preferredMapId": {
+          "type": "string",
+          "enum": ["sunset-rooftop", "gallery-theater", "forest-cabin"]
+        },
+        "avatar": {
+          "type": "object",
+          "description": "Chibi flat-vector avatar configuration map"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerUid", "displayName", "preferredMapId", "avatar", "createdAt", "updatedAt"]
+    },
+    "ScenePreset": {
+      "title": "ScenePreset",
+      "description": "User-customized 2D theater room layout, furniture arrangement, and default video source.",
+      "type": "object",
+      "properties": {
+        "sceneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "roomName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48
+        },
+        "mapId": {
+          "type": "string",
+          "enum": ["sunset-rooftop", "gallery-theater", "forest-cabin"]
+        },
+        "furniture": {
+          "type": "array",
+          "description": "Bounded list of custom furniture objects (max 40 items)"
+        },
+        "defaultVideoUrl": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["sceneId", "ownerUid", "roomName", "mapId", "furniture", "defaultVideoUrl", "isPublic", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private cross-platform avatar and preference profile keyed by Firebase Auth UID."
+    },
+    "/scenes/{sceneId}": {
+      "schema": { "$ref": "#/entities/ScenePreset" },
+      "description": "User-saved scene configurations synced across desktop and mobile devices."
+    }
+  }
+}

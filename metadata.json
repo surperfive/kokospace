@@ -1,0 +1,6 @@
+{
+  "name": "KokoSpace — 2D 元宇宙多人共看影院",
+  "description": "手机与电脑通用的 2D 扁平矢量元宇宙共看空间，支持 Q 版虚拟化身、中央巨幕多人点播同步、空间距离实时语音、表情包互动、Google 云端跨平台同步与社区插件扩展。",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

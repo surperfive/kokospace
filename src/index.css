@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Outfit", "Plus Jakarta Sans", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    overscroll-behavior: none;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes floatUpFade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.75);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -12px) scale(1.08);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -44px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -62px) scale(0.92);
+  }
+}
+
+.animate-reaction-float {
+  animation: floatUpFade 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-reaction-float {
+    animation-duration: 0.4s;
+  }
+}
