@@ -1,5 +1,8 @@
 # 部署到 Cloudflare（可分享的房间链接）
 
+> 想把代码放 GitHub、以后在网页里改、push 就自动上线？看 [`DEPLOY_GITHUB.md`](./DEPLOY_GITHUB.md)。
+> 那份文档里的流程同样部署到这里，只是把「本地敲命令」换成了「GitHub Actions」。
+
 ## 先看结论
 
 这个项目**不是纯静态站**：多人同房间依赖 `server.ts` 里的 WebSocket 长连接 + 内存中的房间状态。
