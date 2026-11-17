@@ -42,6 +42,7 @@ import {
 } from './lib/firebase';
 import { pluginRegistry } from './lib/pluginRegistry';
 import { SpatialAudioManager } from './lib/spatialAudio';
+import { P2PRoom, isP2PEnabled } from './lib/p2pRoom';
 import { MetaverseCanvas } from './components/MetaverseCanvas';
 import { MobileJoystick } from './components/MobileJoystick';
 import { AvatarEditorModal } from './components/AvatarEditorModal';
@@ -127,6 +128,8 @@ export default function App() {
   const [copiedLink, setCopiedLink] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const p2pRef = useRef<P2PRoom | null>(null);
+  const p2pEnabledRef = useRef<boolean>(isP2PEnabled());
   const audioMgrRef = useRef<SpatialAudioManager | null>(null);
   const playersRef = useRef<PlayerState[]>([]);
   const localIdRef = useRef<string>('');
@@ -142,6 +145,18 @@ export default function App() {
     window.setTimeout(() => {
       setToastMsg((prev) => (prev === msg ? null : prev));
     }, 2600);
+  }, []);
+
+  // 业务消息统一出口：P2P 模式下交给房主，否则走云端 WebSocket。
+  // 注意语音信令（webrtc:signal）不走这里 —— 它必须走云端的转发通道。
+  const sendGame = useCallback((payload: string) => {
+    const p2p = p2pRef.current;
+    if (p2p) {
+      p2p.send(payload);
+      return;
+    }
+    const socket = wsRef.current;
+    socket?.send(payload);
   }, []);
 
   // Detect touch capability for responsive virtual joystick
@@ -238,22 +253,21 @@ export default function App() {
       const ws = new WebSocket(`${wsOrigin}/ws?room=${encodeURIComponent(roomId)}`);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        const persistedClientId =
-          sessionStorage.getItem('koko_client_id') ||
-          `p_${Math.random().toString(36).slice(2, 10)}`;
-        sessionStorage.setItem('koko_client_id', persistedClientId);
+      const clientId =
+        sessionStorage.getItem('koko_client_id') || `p_${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem('koko_client_id', clientId);
 
-        ws.send(
-          JSON.stringify({
-            type: 'room:join',
-            roomId,
-            playerId: persistedClientId,
-            uid: user?.uid || null,
-            name: playerName,
-            avatar,
-          })
-        );
+      const joinPayload = {
+        type: 'room:join',
+        roomId,
+        playerId: clientId,
+        uid: user?.uid || null,
+        name: playerName,
+        avatar,
+      };
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify(joinPayload));
 
         // 心跳：部分 CDN / 反代（如 EdgeOne）对空闲 WebSocket 有 300s 超时，
         // 看电影时没人走动就会断。25s 一次轻量消息保活；服务端不认识这个 type，会直接忽略。
@@ -273,6 +287,58 @@ export default function App() {
           return;
         }
 
+        // ── P2P 模式分流 ────────────────────────────────────────────────
+        // 云端 WebSocket 只做三件事：拿 hostId、转发信令、当兜底。
+        // 业务消息一律走房主的 DataChannel，收到云端的业务广播要丢弃（那是幽灵状态）。
+        if (p2pEnabledRef.current) {
+          if (msg.type === 'p2p:signal') {
+            void p2pRef.current?.handleSignal(msg.fromId, msg.signal);
+            return;
+          }
+          if (msg.type === 'room:init') {
+            // 云端只告诉我们谁是房主；真正的房间状态稍后由房主通过 DataChannel 下发
+            const role = msg.hostId === msg.playerId ? 'host' : 'guest';
+            if (!p2pRef.current) {
+              const room = new P2PRoom({
+                roomId,
+                selfId: msg.playerId,
+                hostId: msg.hostId || msg.playerId,
+                role,
+                sendSignal: (targetId, signal) => {
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'p2p:signal', targetId, signal }));
+                  }
+                },
+                onMessage: (payload) => {
+                  try {
+                    dispatchMessage(payload);
+                  } catch (err) {
+                    console.warn('[p2p] dispatch failed', err);
+                  }
+                },
+                onStatus: (status, detail) => {
+                  if (status === 'failed') {
+                    showToast(detail || '直连失败，已切回云端房间');
+                    p2pRef.current?.close();
+                    p2pRef.current = null;
+                  } else if (status === 'connected') {
+                    showToast('已直连房主，延迟更低');
+                  }
+                },
+              });
+              p2pRef.current = room;
+              room.start(joinPayload);
+              return; // 等房主下发 room:init
+            }
+          }
+          if (msg.type !== 'webrtc:signal') return; // 其余云端消息在 P2P 模式下忽略
+        }
+
+        dispatchMessage(msg);
+      };
+
+      function dispatchMessage(msgIn: Record<string, any>) {
+        const msg = msgIn;
         switch (msg.type) {
           case 'room:init': {
             setLocalPlayerId(msg.playerId);
@@ -403,7 +469,7 @@ export default function App() {
             break;
           }
         }
-      };
+      }
 
       ws.onclose = () => {
         if (pingTimer) {
@@ -421,6 +487,8 @@ export default function App() {
       closedByUser = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       if (pingTimer) window.clearInterval(pingTimer);
+      p2pRef.current?.close();
+      p2pRef.current = null;
       wsRef.current?.close();
     };
   }, [hasEnteredRoom, roomId]);
@@ -444,15 +512,13 @@ export default function App() {
       }
     }
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'player:update_avatar',
-          name: cleanName,
-          avatar,
-        })
-      );
-    }
+    sendGame(
+      JSON.stringify({
+        type: 'player:update_avatar',
+        name: cleanName,
+        avatar,
+      })
+    );
 
     setHasEnteredRoom(true);
     setShowAvatarModal(false);
@@ -470,16 +536,14 @@ export default function App() {
       setPlayers((prev) =>
         prev.map((p) => (p.id === localIdRef.current ? { ...p, ...next } : p))
       );
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'player:move',
-            ...next,
-          })
-        );
-      }
+      sendGame(
+        JSON.stringify({
+          type: 'player:move',
+          ...next,
+        })
+      );
     },
-    []
+    [sendGame]
   );
 
   const toggleMic = async () => {
@@ -487,7 +551,7 @@ export default function App() {
       audioMgrRef.current?.disableMic();
       setIsMicOn(false);
       setIsBroadcasting(false);
-      wsRef.current?.send(
+      sendGame(
         JSON.stringify({ type: 'player:audio_state', isMicOn: false, isBroadcasting: false })
       );
       return;
@@ -498,7 +562,7 @@ export default function App() {
       return;
     }
     setIsMicOn(true);
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({ type: 'player:audio_state', isMicOn: true, isBroadcasting })
     );
   };
@@ -513,21 +577,21 @@ export default function App() {
       }
       setIsMicOn(true);
       setIsBroadcasting(true);
-      wsRef.current?.send(
+      sendGame(
         JSON.stringify({ type: 'player:audio_state', isMicOn: true, isBroadcasting: true })
       );
       showToast('已开启全房间舞台广播');
       return;
     }
     setIsBroadcasting(next);
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({ type: 'player:audio_state', isMicOn, isBroadcasting: next })
     );
     showToast(next ? '已开启全房间舞台广播' : '已切换回空间距离语音');
   };
 
   const sendReaction = (emoji: string, label?: string) => {
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'player:reaction',
         emoji,
@@ -541,12 +605,12 @@ export default function App() {
     e.preventDefault();
     const text = chatInput.trim();
     if (!text) return;
-    wsRef.current?.send(JSON.stringify({ type: 'player:chat', text }));
+    sendGame(JSON.stringify({ type: 'player:chat', text }));
     setChatInput('');
   };
 
   const handleVideoControl = (action: 'play' | 'pause' | 'seek', currentTime?: number) => {
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'video:control',
         action,
@@ -556,7 +620,7 @@ export default function App() {
   };
 
   const handleSelectVideo = (item: VideoQueueItem) => {
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'video:control',
         action: 'select_item',
@@ -566,7 +630,7 @@ export default function App() {
   };
 
   const handleEnqueueUrl = async (url: string, title: string, playNow: boolean) => {
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'video:control',
         action: 'enqueue',
@@ -577,7 +641,7 @@ export default function App() {
   };
 
   const handleRemoveFromQueue = (itemId: string) => {
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'video:control',
         action: 'remove_queue',
@@ -590,7 +654,7 @@ export default function App() {
     const theme = allMaps.find((m) => m.id === nextMapId) || BUILTIN_MAPS[0];
     setMapId(nextMapId);
     setFurniture(theme.defaultFurniture);
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'scene:update',
         mapId: nextMapId,
@@ -624,7 +688,7 @@ export default function App() {
       updated = [...furniture, newItem];
     }
     setFurniture(updated);
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'scene:update',
         furniture: updated,
@@ -635,7 +699,7 @@ export default function App() {
   const handleResetFurniture = () => {
     const defaults = currentMapTheme.defaultFurniture;
     setFurniture(defaults);
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'scene:update',
         furniture: defaults,
@@ -661,7 +725,7 @@ export default function App() {
   const handleLoadCloudScene = (preset: ScenePreset) => {
     setMapId(preset.mapId);
     setFurniture(preset.furniture);
-    wsRef.current?.send(
+    sendGame(
       JSON.stringify({
         type: 'scene:update',
         mapId: preset.mapId,
