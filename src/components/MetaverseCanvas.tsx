@@ -71,6 +71,9 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
   const keysRef = useRef<Set<string>>(new Set());
   const clickTargetRef = useRef<{ x: number; y: number; createdAt: number } | null>(null);
+  // 远端玩家的渲染坐标（插值用）：服务端每 50ms 才来一次坐标，
+  // 直接画会一跳一跳，这里每帧朝目标缓动，看起来才顺。
+  const remotePosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const localPosRef = useRef<{
     x: number;
     y: number;
@@ -387,6 +390,25 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           }
 
           // Y-Sort all players (override local player with high-frequency ref)
+          // 远端玩家先做位置插值：目标点是最近一次收到的坐标，渲染点每帧向它靠近
+          const remotePos = remotePosRef.current;
+          const aliveIds = new Set<string>();
+          for (const p of currentPlayers) {
+            if (p.id === meId) continue;
+            aliveIds.add(p.id);
+            const cur = remotePos.get(p.id);
+            if (!cur) {
+              remotePos.set(p.id, { x: p.x, y: p.y });
+              continue;
+            }
+            const k = Math.min(1, dt * 16); // 约 60ms 内贴合，卡顿时也不会拖尾太久
+            cur.x += (p.x - cur.x) * k;
+            cur.y += (p.y - cur.y) * k;
+          }
+          for (const id of Array.from(remotePos.keys())) {
+            if (!aliveIds.has(id)) remotePos.delete(id);
+          }
+
           const renderList = currentPlayers.map((p) =>
             p.id === meId
               ? {
@@ -398,7 +420,11 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
                   isSitting: lp.isSitting,
                   seatId: lp.seatId,
                 }
-              : p
+              : {
+                  ...p,
+                  x: remotePos.get(p.id)?.x ?? p.x,
+                  y: remotePos.get(p.id)?.y ?? p.y,
+                }
           );
           renderList.sort((a, b) => a.y - b.y);
 

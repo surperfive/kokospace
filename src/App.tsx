@@ -126,6 +126,10 @@ export default function App() {
   const [selectedBrush, setSelectedBrush] = useState<FurnitureType | 'erase'>('beanbag_coral');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  // 连接方式：off=云端模式；connecting=正在打洞；direct=已直连房主；cloud=直连失败回落
+  const [linkMode, setLinkMode] = useState<'off' | 'connecting' | 'direct' | 'cloud'>(() =>
+    isP2PEnabled() ? 'connecting' : 'off'
+  );
 
   const wsRef = useRef<WebSocket | null>(null);
   const p2pRef = useRef<P2PRoom | null>(null);
@@ -328,10 +332,12 @@ export default function App() {
                 },
                 onStatus: (status, detail) => {
                   if (status === 'failed') {
+                    setLinkMode('cloud');
                     showToast(detail || '直连失败，已切回云端房间');
                     p2pRef.current?.close();
                     p2pRef.current = null;
                   } else if (status === 'connected') {
+                    setLinkMode('direct');
                     showToast('已直连房主，延迟更低');
                   }
                 },
@@ -788,6 +794,35 @@ export default function App() {
           <span className="hidden sm:inline text-xs text-zinc-600 truncate">
             {currentMapTheme.name} · 房间 {roomId}
           </span>
+          {linkMode !== 'off' && (
+            <span
+              title={
+                linkMode === 'direct'
+                  ? 'P2P 直连房主，消息不经过云端'
+                  : linkMode === 'cloud'
+                    ? '直连失败，正在走云端服务器（延迟较高）'
+                    : '正在与房主建立直连…'
+              }
+              className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                linkMode === 'direct'
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : linkMode === 'cloud'
+                    ? 'bg-amber-50 text-amber-600'
+                    : 'bg-zinc-100 text-zinc-500'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  linkMode === 'direct'
+                    ? 'bg-emerald-500'
+                    : linkMode === 'cloud'
+                      ? 'bg-amber-500'
+                      : 'bg-zinc-400'
+                }`}
+              />
+              {linkMode === 'direct' ? '直连' : linkMode === 'cloud' ? '云端' : '连接中'}
+            </span>
+          )}
         </div>
 
         {/* Zone 2: Clean Single-Line Nav Links (Desktop) */}
