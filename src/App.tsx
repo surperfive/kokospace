@@ -346,15 +346,38 @@ export default function App() {
         dispatchMessage(msg);
       };
 
+      /**
+       * 回落到云端模式。
+       * 关键：必须把 p2pEnabledRef 也关掉 —— 否则分流逻辑会继续丢弃云端业务消息，
+       * 表现就是「显示云端，但谁都不同步」。
+       */
+      function fallbackToCloud(reason: string) {
+        if (p2pFallbackRef.current) {
+          window.clearTimeout(p2pFallbackRef.current);
+          p2pFallbackRef.current = null;
+        }
+        p2pEnabledRef.current = false;
+        isP2PHostRef.current = false;
+        try {
+          p2pRef.current?.close();
+        } catch {
+          /* ignore */
+        }
+        p2pRef.current = null;
+        setLinkMode('cloud');
+        showToast(reason);
+        // 重新 join 一次，拉全量房间状态（含已在线玩家的位置）
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(joinPayload));
+        }
+      }
+
       /** 6 秒内没建好直连就回落云端模式（手机 4G / 对称 NAT 常见） */
       function armP2PFallback() {
         if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
         p2pFallbackRef.current = window.setTimeout(() => {
           if (p2pRef.current && !p2pRef.current.connected) {
-            p2pRef.current.close();
-            p2pRef.current = null;
-            setLinkMode('cloud');
-            showToast('直连超时，已切回云端房间');
+            fallbackToCloud('直连超时，已切回云端房间');
           }
         }, 6000);
       }
@@ -381,11 +404,7 @@ export default function App() {
           },
           onStatus: (status, detail) => {
             if (status === 'failed') {
-              if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
-              setLinkMode('cloud');
-              showToast(detail || '直连失败，已切回云端房间');
-              p2pRef.current?.close();
-              p2pRef.current = null;
+              fallbackToCloud(detail || '直连失败，已切回云端房间');
             } else if (status === 'connected') {
               if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
               setLinkMode('direct');
