@@ -29,6 +29,13 @@
 - `.npmrc` 里 `legacy-peer-deps=true`，CI 与本地都不用再带参数。
 - 前端 WS 默认同源，可用 `VITE_WS_URL` 覆盖（只在「前端单独托管」时才需要）。
 
+## 架构（2026-11-18 起）
+- **房间逻辑只有一份**：`src/lib/roomCore.ts` 的 `RoomCore`，纯 TS。`server.ts`（Express）、`worker/index.ts`（DO）、
+  `src/lib/p2pRoom.ts`（浏览器房主）都只是搬运 `Outbound`。**改协议只改 roomCore.ts**。
+- **P2P 房主模式**：链接加 `&p2p=1` → 第一个进房的人是房主，浏览器跑 RoomCore，客人经 DataChannel(label `koko-state`) 连他；
+  云端 WS 只负责 `room:init` 给 hostId + 转发 `p2p:signal`。连不上自动回落云端房间。
+- 语音仍是 P2P mesh，信令走云端 `webrtc:signal`，与状态通道互不相干。
+
 ## 已知限制
 - 房间状态只在内存（DO 内存 / Express Map），空房间会重置。
 - 语音是 P2P WebRTC，信令走业务 WS，无 TURN，严格 NAT 下可能连不上。

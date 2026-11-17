@@ -757,7 +757,9 @@ export default function App() {
   };
 
   const copyInviteLink = () => {
-    const url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
+    // 房主在 P2P 模式下复制链接必须带上 p2p=1，否则别人进来是云端模式，连不到房主
+    const p2pSuffix = p2pEnabledRef.current ? '&p2p=1' : '';
+    const url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}${p2pSuffix}`;
     navigator.clipboard?.writeText(url);
     setCopiedLink(true);
     showToast(`已复制房间「${roomId}」邀请链接`);
