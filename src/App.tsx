@@ -224,6 +224,7 @@ export default function App() {
     if (!hasEnteredRoom) return;
     let closedByUser = false;
     let reconnectTimer: number | null = null;
+    let pingTimer: number | null = null;
 
     // 默认与前端同源（Workers / 本地 Express 都是这种）。
     // 若前端单独托管在别处（如 GitHub Pages），用 VITE_WS_URL 指向 WS 服务端。
@@ -253,6 +254,15 @@ export default function App() {
             avatar,
           })
         );
+
+        // 心跳：部分 CDN / 反代（如 EdgeOne）对空闲 WebSocket 有 300s 超时，
+        // 看电影时没人走动就会断。25s 一次轻量消息保活；服务端不认识这个 type，会直接忽略。
+        if (pingTimer) window.clearInterval(pingTimer);
+        pingTimer = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'client:ping', t: Date.now() }));
+          }
+        }, 25000);
       };
 
       ws.onmessage = (event) => {
@@ -396,6 +406,10 @@ export default function App() {
       };
 
       ws.onclose = () => {
+        if (pingTimer) {
+          window.clearInterval(pingTimer);
+          pingTimer = null;
+        }
         if (!closedByUser) {
           reconnectTimer = window.setTimeout(connect, 1800);
         }
@@ -406,6 +420,7 @@ export default function App() {
     return () => {
       closedByUser = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (pingTimer) window.clearInterval(pingTimer);
       wsRef.current?.close();
     };
   }, [hasEnteredRoom, roomId]);

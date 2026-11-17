@@ -15,6 +15,9 @@
 - 依赖安装必须 `npm install --legacy-peer-deps`（esbuild ^0.25 vs vite 8 peer 冲突）。
 - `dist/` 在 .gitignore 里，部署时由 `npm run deploy`（vite build && wrangler deploy）现构建。
 - **本机直连 `*.workers.dev` 不通**（超时/代理 502），只能 `wrangler` 走 api.cloudflare.com 操作；线上验收要在能访问 CF 的网络里做。
+- **国内可访问的正解 = 绑自己的域名**（`wrangler domains add` 或在 Dashboard 加 Custom Domain），零代码、免费；
+  但 CF 免费版在大陆无节点，走港/日/新/美西，RTT 150–300ms。要「快且稳」只能备案 + EdgeOne Pages/国内服务器跑 WS，成本与周期都高。
+- 项目类型不可改：闪电图标=Pages（`*.pages.dev`），菱形=Worker（`*.workers.dev`）；本项目必须 Worker（房间靠 DO）。
 
 ## 代码托管与发布
 - 仓库已 `git init -b main`，首个提交 `88a1f1f`。目标是 GitHub 托管 + Actions 自动部署（不推 GitHub Pages，Pages 跑不了 WS）。
@@ -26,3 +29,10 @@
 - 房间状态只在内存（DO 内存 / Express Map），空房间会重置。
 - 语音是 P2P WebRTC，信令走业务 WS，无 TURN，严格 NAT 下可能连不上。
 - 免费计划配额：Workers 10 万请求/天；DO 按连接时长计 duration。
+
+## 与控制台相关的口径（用户问过多次，直接复用）
+- Cloudflare 控制台卡片图标 = 产品类型：**闪电 = Pages**（域名 `*.pages.dev`，该项目下 portf/zportfolio/greenbite-light-meal 都是），
+  **菱形 = Worker**（域名 `*.workers.dev`，本项目 kokospace）。类型创建后不能改。
+- 本项目必须是 Worker：房间靠 Durable Object，Pages 没有 DO 绑定。
+- 卡片上「最近一次提交信息」是 **Git 连接**的效果，不是图标。接 Git（Workers Builds）后 Worker 卡片也会显示提交，
+  但图标仍是菱形。接 Git 的副作用：第一次构建会部署仓库最新代码（会覆盖手动回滚的旧版），且与 GitHub Actions 双重部署。
