@@ -11,6 +11,10 @@
 ## 部署
 - **线上：https://kokospace.kccogk.workers.dev**（房间链接 `?room=xxx`）。Cloudflare 账号 kccogk@outlook.com，
   Account ID `ce72297a5f7faac96aeb087d4ad1b77e`，Worker 名 `kokospace`，wrangler OAuth 已登录在本机。
+- **自定义域名：https://kokospace.de5.net** 已绑到同一个 Worker（子域 zone 托管在 CF，SOA=selah.ns.cloudflare.com；
+  父域 de5.net 是 dnshe 免费域名，做了 NS 委派）。本机可直连访问，无需代理。
+- **实测性能（国内直连 CF）**：首页 TTFB 1.0–4.0s、约 1/3 请求 30s 超时；WS 移动消息往返 342–1165ms（avg 887ms）、
+  8 条到 3 条。→ 不适合实时同步，要「不卡」只能把进程放到香港/大陆。
 - Cloudflare Workers + Static Assets + Durable Objects，配置在 `wrangler.jsonc`，详见 `docs/DEPLOY_CLOUDFLARE.md`。
 - 依赖安装必须 `npm install --legacy-peer-deps`（esbuild ^0.25 vs vite 8 peer 冲突）。
 - `dist/` 在 .gitignore 里，部署时由 `npm run deploy`（vite build && wrangler deploy）现构建。
