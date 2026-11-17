@@ -135,6 +135,7 @@ export default function App() {
   const p2pRef = useRef<P2PRoom | null>(null);
   const p2pEnabledRef = useRef<boolean>(isP2PEnabled());
   const p2pHostRef = useRef<string | null>(null);
+  const p2pFallbackRef = useRef<number | null>(null);
   const audioMgrRef = useRef<SpatialAudioManager | null>(null);
   const playersRef = useRef<PlayerState[]>([]);
   const localIdRef = useRef<string>('');
@@ -336,11 +337,13 @@ export default function App() {
                 },
                 onStatus: (status, detail) => {
                   if (status === 'failed') {
+                    if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
                     setLinkMode('cloud');
                     showToast(detail || '直连失败，已切回云端房间');
                     p2pRef.current?.close();
                     p2pRef.current = null;
                   } else if (status === 'connected') {
+                    if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
                     setLinkMode('direct');
                     showToast('已直连房主，延迟更低');
                   }
@@ -353,7 +356,24 @@ export default function App() {
               // 这一条让云端把房主改回来，后来的人才知道该连谁。
               if (role === 'host' && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'p2p:host' }));
-              }              return; // 等房主下发 room:init
+              }
+
+              // 先把云端 init 当临时状态渲染：手机上如果直连没打通，
+              // 至少能看到自己和房间，不会是一片空白。
+              dispatchMessage(msg);
+
+              // 6 秒内没建好直连就回落云端模式（手机 4G / 对称 NAT 常见）
+              if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
+              p2pFallbackRef.current = window.setTimeout(() => {
+                if (p2pRef.current && !p2pRef.current.connected) {
+                  p2pRef.current.close();
+                  p2pRef.current = null;
+                  setLinkMode('cloud');
+                  showToast('直连超时，已切回云端房间');
+                }
+              }, 6000);
+
+              return;
             }
           }
           if (msg.type !== 'webrtc:signal') return; // 其余云端消息在 P2P 模式下忽略
@@ -369,7 +389,26 @@ export default function App() {
             setLocalPlayerId(msg.playerId);
             audioMgrRef.current?.setLocalId(msg.playerId);
             setMapId(msg.mapId);
-            setPlayers(msg.players || []);
+            // 兜底：万一列表里没有自己（P2P 客人尚未拿到房主 init、或房间状态异常），
+            // 补一条自己的记录，否则画布上会「看不到自己的角色」。
+            const initPlayers: PlayerState[] = msg.players || [];
+            if (msg.playerId && !initPlayers.some((p) => p.id === msg.playerId)) {
+              initPlayers.push({
+                id: msg.playerId,
+                name: playerName,
+                avatar,
+                x: 800,
+                y: 790,
+                dir: 'up',
+                isMoving: false,
+                isSitting: false,
+                seatId: null,
+                isMicOn: false,
+                isBroadcasting: false,
+                isHost: false,
+              });
+            }
+            setPlayers(initPlayers);
             setFurniture(msg.furniture || []);
             if (msg.videoState) setVideoState(msg.videoState);
             if (msg.serverTimeMs) {
