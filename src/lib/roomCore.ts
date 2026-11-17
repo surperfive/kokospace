@@ -460,14 +460,25 @@ export class RoomCore {
       };
 
       if (action === 'progress') {
-        // 点播人定期上报真实播放位置，服务端据此校准；
-        // 新进房间的人就是靠这个 + updatedAtMs 对齐到同一秒。
+        // 点播人定期上报真实播放位置：服务端校准后广播一次（silent，不弹提示），
+        // 让所有人的时间轴重新对齐，避免长时间播放后各端漂移。
         if (!isController) return [];
         const t = Number(msg.currentTime);
         if (!Number.isFinite(t)) return [];
         vs.currentTime = Math.max(0, t);
         vs.updatedAtMs = now;
-        return []; // 不广播，避免每次上报都刷一遍全网
+        return [
+          {
+            kind: 'all',
+            payload: {
+              type: 'video:synced',
+              videoState: vs,
+              serverTimeMs: now,
+              triggeredBy: me.name,
+              silent: true,
+            },
+          },
+        ];
       }
 
       if (action === 'play') {

@@ -136,6 +136,7 @@ export default function App() {
   const p2pEnabledRef = useRef<boolean>(isP2PEnabled());
   const p2pHostRef = useRef<string | null>(null);
   const p2pFallbackRef = useRef<number | null>(null);
+  const isP2PHostRef = useRef(false);
   const audioMgrRef = useRef<SpatialAudioManager | null>(null);
   const playersRef = useRef<PlayerState[]>([]);
   const localIdRef = useRef<string>('');
@@ -297,17 +298,26 @@ export default function App() {
           return;
         }
 
+        // ── 房主宣告：即使本端是云端模式，也自动跟随到 P2P ────────────────
+        // 否则「房主用 p2p=1、别人用普通链接」会变成两个世界，看起来就是「没同步」。
+        if (msg.type === 'p2p:host' && typeof msg.hostId === 'string') {
+          p2pHostRef.current = msg.hostId;
+          // 云端模式下收到房主宣告 → 自动跟随到 P2P，避免一端直连一端云端（表现为「没同步」）
+          if (!p2pEnabledRef.current && msg.hostId !== clientId) {
+            p2pEnabledRef.current = true;
+            setLinkMode('connecting');
+            startP2P('guest', clientId, msg.hostId);
+            armP2PFallback();
+          }
+          return;
+        }
+
         // ── P2P 模式分流 ────────────────────────────────────────────────
         // 云端 WebSocket 只做三件事：拿 hostId、转发信令、当兜底。
         // 业务消息一律走房主的 DataChannel，收到云端的业务广播要丢弃（那是幽灵状态）。
         if (p2pEnabledRef.current) {
           if (msg.type === 'p2p:signal') {
             void p2pRef.current?.handleSignal(msg.fromId, msg.signal);
-            return;
-          }
-          if (msg.type === 'p2p:host') {
-            // 房主刷新后重新认领身份，记下来给后面建链用
-            p2pHostRef.current = msg.hostId || null;
             return;
           }
           if (msg.type === 'room:init') {
@@ -318,69 +328,76 @@ export default function App() {
             const role = msg.hostId === msg.playerId || iWasHost ? 'host' : 'guest';
             if (role === 'host') sessionStorage.setItem(hostKey, msg.playerId);
             if (!p2pRef.current) {
-              const room = new P2PRoom({
-                roomId,
-                selfId: msg.playerId,
-                hostId: p2pHostRef.current || msg.hostId || msg.playerId,
-                role,
-                sendSignal: (targetId, signal) => {
-                  if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: 'p2p:signal', targetId, signal }));
-                  }
-                },
-                onMessage: (payload) => {
-                  try {
-                    dispatchMessage(payload);
-                  } catch (err) {
-                    console.warn('[p2p] dispatch failed', err);
-                  }
-                },
-                onStatus: (status, detail) => {
-                  if (status === 'failed') {
-                    if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
-                    setLinkMode('cloud');
-                    showToast(detail || '直连失败，已切回云端房间');
-                    p2pRef.current?.close();
-                    p2pRef.current = null;
-                  } else if (status === 'connected') {
-                    if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
-                    setLinkMode('direct');
-                    showToast('已直连房主，延迟更低');
-                  }
-                },
-              });
-              p2pRef.current = room;
-              room.start(joinPayload);
-
+              startP2P(role, msg.playerId, p2pHostRef.current || msg.hostId || msg.playerId);
               // 房主显式认领身份：刷新后云端可能把 hostId 判给了别人，
               // 这一条让云端把房主改回来，后来的人才知道该连谁。
               if (role === 'host' && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'p2p:host' }));
               }
-
-              // 先把云端 init 当临时状态渲染：手机上如果直连没打通，
-              // 至少能看到自己和房间，不会是一片空白。
-              dispatchMessage(msg);
-
-              // 6 秒内没建好直连就回落云端模式（手机 4G / 对称 NAT 常见）
-              if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
-              p2pFallbackRef.current = window.setTimeout(() => {
-                if (p2pRef.current && !p2pRef.current.connected) {
-                  p2pRef.current.close();
-                  p2pRef.current = null;
-                  setLinkMode('cloud');
-                  showToast('直连超时，已切回云端房间');
-                }
-              }, 6000);
-
-              return;
+              armP2PFallback();
             }
+            // 还没直连成功时，先用云端 init 渲染（手机打洞失败也不会一片空白）
+            if (!p2pRef.current?.connected) dispatchMessage(msg);
+            return;
           }
           if (msg.type !== 'webrtc:signal') return; // 其余云端消息在 P2P 模式下忽略
         }
 
         dispatchMessage(msg);
       };
+
+      /** 6 秒内没建好直连就回落云端模式（手机 4G / 对称 NAT 常见） */
+      function armP2PFallback() {
+        if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
+        p2pFallbackRef.current = window.setTimeout(() => {
+          if (p2pRef.current && !p2pRef.current.connected) {
+            p2pRef.current.close();
+            p2pRef.current = null;
+            setLinkMode('cloud');
+            showToast('直连超时，已切回云端房间');
+          }
+        }, 6000);
+      }
+
+      /** 建 P2P 会话（房主 / 客人共用），供 room:init 与 p2p:host 两条路径调用 */
+      function startP2P(role: 'host' | 'guest', selfId: string, hostId: string) {
+        if (p2pRef.current) return p2pRef.current;
+        const room = new P2PRoom({
+          roomId,
+          selfId,
+          hostId,
+          role,
+          sendSignal: (targetId, signal) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'p2p:signal', targetId, signal }));
+            }
+          },
+          onMessage: (payload) => {
+            try {
+              dispatchMessage(payload);
+            } catch (err) {
+              console.warn('[p2p] dispatch failed', err);
+            }
+          },
+          onStatus: (status, detail) => {
+            if (status === 'failed') {
+              if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
+              setLinkMode('cloud');
+              showToast(detail || '直连失败，已切回云端房间');
+              p2pRef.current?.close();
+              p2pRef.current = null;
+            } else if (status === 'connected') {
+              if (p2pFallbackRef.current) window.clearTimeout(p2pFallbackRef.current);
+              setLinkMode('direct');
+              showToast('已直连房主，延迟更低');
+            }
+          },
+        });
+        p2pRef.current = room;
+        isP2PHostRef.current = role === 'host';
+        room.start(joinPayload);
+        return room;
+      }
 
       function dispatchMessage(msgIn: Record<string, any>) {
         const msg = msgIn;
@@ -434,6 +451,10 @@ export default function App() {
               return [...prev, incoming];
             });
             audioMgrRef.current?.connectToPeer(incoming.id);
+            // 房主：有人进来就再宣告一次，保证后到的人也知道该连谁
+            if (isP2PHostRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'p2p:host' }));
+            }
             break;
           }
           case 'player:moved': {
@@ -510,7 +531,7 @@ export default function App() {
             if (msg.serverTimeMs) {
               setServerTimeOffsetMs(msg.serverTimeMs - Date.now());
             }
-            if (msg.triggeredBy && msg.triggeredBy !== playerName) {
+            if (msg.triggeredBy && msg.triggeredBy !== playerName && !msg.silent) {
               showToast(`${msg.triggeredBy} 同步更新了中央巨幕播放状态`);
             }
             break;
@@ -891,6 +912,7 @@ export default function App() {
                 }`}
               />
               {linkMode === 'direct' ? '直连' : linkMode === 'cloud' ? '云端' : '连接中'}
+              <span className="opacity-70">· {players.length}人</span>
             </span>
           )}
         </div>
