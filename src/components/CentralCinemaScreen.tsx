@@ -23,6 +23,8 @@ interface CentralCinemaScreenProps {
   onToggleTheaterFocus: () => void;
   onOpenQueue: () => void;
   onVideoControl: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
+  /** 当前用户是否是点播人：不是就只能看，进度条与播放键禁用 */
+  canControlProgress?: boolean;
   activeWidgets: StageWidgetPlugin[];
 }
 
@@ -38,6 +40,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onToggleTheaterFocus,
   onOpenQueue,
   onVideoControl,
+  canControlProgress = true,
   activeWidgets,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -157,7 +160,14 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             <Radio className="w-3.5 h-3.5 shrink-0" style={{ color: accentColor }} />
             <span className="font-medium truncate">{item.title}</span>
             <span className="text-zinc-400 hidden sm:inline">·</span>
-            <span className="text-zinc-400 truncate hidden sm:inline">点播人: {item.addedBy}</span>
+            <span className="text-zinc-400 truncate hidden sm:inline">
+              控片: {videoState.controllerName || item.addedBy}
+            </span>
+            {!canControlProgress && (
+              <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-zinc-300 shrink-0">
+                只看
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {activeWidgets.map((w) => (
@@ -224,8 +234,12 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
           {!videoState.isPlaying && (item.sourceType === 'builtin' || item.sourceType === 'mp4') && (
             <button
               type="button"
-              onClick={() => onVideoControl('play', displayTime)}
-              className="absolute inset-0 flex items-center justify-center bg-black/35 hover:bg-black/45 transition-colors cursor-pointer"
+              onClick={() => canControlProgress && onVideoControl('play', displayTime)}
+              disabled={!canControlProgress}
+              title={canControlProgress ? '继续播放' : `由「${videoState.controllerName || '点播人'}」控片，你只能观看`}
+              className={`absolute inset-0 flex items-center justify-center bg-black/35 transition-colors ${
+                canControlProgress ? 'hover:bg-black/45 cursor-pointer' : 'cursor-not-allowed'
+              }`}
             >
               <div className="w-14 h-14 rounded-full bg-white/95 text-zinc-900 flex items-center justify-center shadow-lg">
                 <Play className="w-6 h-6 ml-0.5 fill-current" />
@@ -240,9 +254,13 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             <button
               type="button"
               onClick={() =>
+                canControlProgress &&
                 onVideoControl(videoState.isPlaying ? 'pause' : 'play', displayTime)
               }
-              className="p-1 rounded hover:bg-white/15 transition-colors cursor-pointer"
+              disabled={!canControlProgress}
+              className={`p-1 rounded transition-colors ${
+                canControlProgress ? 'hover:bg-white/15 cursor-pointer' : 'opacity-40 cursor-not-allowed'
+              }`}
               aria-label={videoState.isPlaying ? '暂停同步播放' : '开始同步播放'}
             >
               {videoState.isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
@@ -255,7 +273,10 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               step={1}
               value={Math.min(duration, Math.floor(displayTime))}
               onChange={(e) => onVideoControl('seek', Number(e.target.value))}
-              className="flex-1 h-1.5 accent-[#FF5A36] cursor-pointer"
+              disabled={!canControlProgress}
+              className={`flex-1 h-1.5 accent-[#FF5A36] ${
+                canControlProgress ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
+              }`}
             />
 
             <span className="font-mono tabular-nums text-[11px] text-zinc-300 shrink-0">

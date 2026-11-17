@@ -138,8 +138,12 @@ export default function App() {
   const audioMgrRef = useRef<SpatialAudioManager | null>(null);
   const playersRef = useRef<PlayerState[]>([]);
   const localIdRef = useRef<string>('');
+  const videoStateRef = useRef(videoState);
+  const serverOffsetRef = useRef(serverTimeOffsetMs);
   playersRef.current = players;
   localIdRef.current = localPlayerId;
+  videoStateRef.current = videoState;
+  serverOffsetRef.current = serverTimeOffsetMs;
 
   const currentMapTheme = useMemo(() => {
     return allMaps.find((m) => m.id === mapId) || allMaps[0] || BUILTIN_MAPS[0];
@@ -458,6 +462,10 @@ export default function App() {
             });
             break;
           }
+          case 'video:rejected': {
+            showToast(msg.reason || '只有点播人可以改播放进度');
+            break;
+          }
           case 'video:synced': {
             if (msg.videoState) setVideoState(msg.videoState);
             if (msg.serverTimeMs) {
@@ -515,6 +523,23 @@ export default function App() {
   }, [hasEnteredRoom, roomId]);
 
   // Actions & Handlers
+  // 点播人每 3 秒上报一次真实播放位置：服务端据此校准时间轴，
+  // 新进来的人就是靠这个 + updatedAtMs 对齐到同一秒。
+  useEffect(() => {
+    if (!hasEnteredRoom) return;
+    if (!videoState.controllerId || videoState.controllerId !== localPlayerId) return;
+    const timer = window.setInterval(() => {
+      const vs = videoStateRef.current;
+      const nowServer = Date.now() + serverOffsetRef.current;
+      const elapsed = vs.isPlaying ? Math.max(0, (nowServer - vs.updatedAtMs) / 1000) : 0;
+      let t = vs.currentTime + elapsed;
+      const dur = vs.currentItem.durationSec;
+      if (dur && dur > 0) t = t % dur;
+      sendGame(JSON.stringify({ type: 'video:control', action: 'progress', currentTime: t }));
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [hasEnteredRoom, localPlayerId, videoState.controllerId, sendGame]);
+
   const handleSaveAvatarAndEnter = async () => {
     const cleanName = playerName.trim() || '旅人';
     setPlayerName(cleanName);
@@ -631,6 +656,12 @@ export default function App() {
   };
 
   const handleVideoControl = (action: 'play' | 'pause' | 'seek', currentTime?: number) => {
+    // 进度只由点播人控制；别人点了只给提示，不发消息
+    const controllerId = videoState.controllerId;
+    if (controllerId && controllerId !== localPlayerId) {
+      showToast(`「${videoState.controllerName || '点播人'}」在控片，只有他能改进度`);
+      return;
+    }
     sendGame(
       JSON.stringify({
         type: 'video:control',
@@ -917,6 +948,9 @@ export default function App() {
             onToggleTheaterFocus={() => setIsTheaterFocused((v) => !v)}
             onOpenQueue={() => setShowQueueDrawer(true)}
             onVideoControl={handleVideoControl}
+            canControlProgress={
+              !videoState.controllerId || videoState.controllerId === localPlayerId
+            }
             onProximityUpdate={(count, stage) => {
               setNearbyCount(count);
               setInStageZone(stage);

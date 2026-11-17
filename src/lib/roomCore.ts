@@ -63,6 +63,9 @@ export interface RoomVideoState {
   currentTime: number;
   updatedAtMs: number;
   queue: RoomVideoItem[];
+  /** 点播人：只有他能改播放进度（play/pause/seek），其他人只读 */
+  controllerId?: string | null;
+  controllerName?: string;
 }
 
 export interface RoomChatMessage {
@@ -246,6 +249,8 @@ export class RoomCore {
       currentTime: 0,
       updatedAtMs: Date.now(),
       queue: DEFAULT_PLAYLIST.map((item) => ({ ...item })),
+      controllerId: null,
+      controllerName: '',
     };
     this.chatHistory = [
       {
@@ -437,20 +442,53 @@ export class RoomCore {
       const action = msg.action;
       const vs = this.videoState;
       const currentElapsed = computeAuthoritativeVideoTime(vs);
+      // 点播人（controllerId）之外的玩家只能看，不能改进度
+      const isController = !vs.controllerId || vs.controllerId === playerId;
+      const denyProgress = (): Outbound[] => [
+        {
+          kind: 'to',
+          targetId: playerId,
+          payload: {
+            type: 'video:rejected',
+            reason: `${vs.controllerName || '点播人'} 正在控片，只有点播人可以改播放进度`,
+          },
+        },
+      ];
+      const claimController = () => {
+        vs.controllerId = playerId;
+        vs.controllerName = me.name;
+      };
+
+      if (action === 'progress') {
+        // 点播人定期上报真实播放位置，服务端据此校准；
+        // 新进房间的人就是靠这个 + updatedAtMs 对齐到同一秒。
+        if (!isController) return [];
+        const t = Number(msg.currentTime);
+        if (!Number.isFinite(t)) return [];
+        vs.currentTime = Math.max(0, t);
+        vs.updatedAtMs = now;
+        return []; // 不广播，避免每次上报都刷一遍全网
+      }
 
       if (action === 'play') {
+        if (!isController) return denyProgress();
+        if (!vs.controllerId) claimController();
         vs.currentTime = Number.isFinite(Number(msg.currentTime))
           ? Number(msg.currentTime)
           : currentElapsed;
         vs.isPlaying = true;
         vs.updatedAtMs = now;
       } else if (action === 'pause') {
+        if (!isController) return denyProgress();
+        if (!vs.controllerId) claimController();
         vs.currentTime = Number.isFinite(Number(msg.currentTime))
           ? Number(msg.currentTime)
           : currentElapsed;
         vs.isPlaying = false;
         vs.updatedAtMs = now;
       } else if (action === 'seek') {
+        if (!isController) return denyProgress();
+        if (!vs.controllerId) claimController();
         vs.currentTime = Math.max(0, Number(msg.currentTime) || 0);
         vs.updatedAtMs = now;
       } else if (action === 'select_item' && msg.item) {
@@ -469,6 +507,8 @@ export class RoomCore {
         vs.currentTime = 0;
         vs.isPlaying = true;
         vs.updatedAtMs = now;
+        // 谁点播谁控片
+        claimController();
         if (!vs.queue.some((q) => q.id === item.id)) vs.queue.push(item);
       } else if (action === 'enqueue' && msg.item) {
         const parsed = parseVideoUrlServer(String(msg.item.url || ''));
@@ -485,6 +525,7 @@ export class RoomCore {
           vs.currentTime = 0;
           vs.isPlaying = true;
           vs.updatedAtMs = now;
+          claimController();
         }
       } else if (action === 'remove_queue' && typeof msg.itemId === 'string') {
         vs.queue = vs.queue.filter((q) => q.id !== msg.itemId);
@@ -550,9 +591,30 @@ export class RoomCore {
       }
     }
 
-    return [
+    const out: Outbound[] = [
       { kind: 'all', payload: { type: 'player:left', playerId, newHostId: this.hostId } },
     ];
+
+    // 点播人离开了：把控片权交给房主（没有房主就给剩下第一个），并广播一次
+    if (this.videoState.controllerId === playerId) {
+      const next =
+        this.hostId && this.players.has(this.hostId)
+          ? this.hostId
+          : (this.players.keys().next().value as string | undefined) || null;
+      this.videoState.controllerId = next;
+      this.videoState.controllerName = next ? this.players.get(next)?.name || '' : '';
+      out.push({
+        kind: 'all',
+        payload: {
+          type: 'video:synced',
+          videoState: this.videoState,
+          serverTimeMs: Date.now(),
+          triggeredBy: '系统',
+        },
+      });
+    }
+
+    return out;
   }
 
   get isEmpty(): boolean {

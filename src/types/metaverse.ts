@@ -114,6 +114,9 @@ export interface VideoState {
   currentTime: number;
   updatedAtMs: number;
   queue: VideoQueueItem[];
+  /** 点播人：只有他能改播放进度（play/pause/seek），其余人只看 */
+  controllerId?: string | null;
+  controllerName?: string;
 }
 
 export interface FloatingReaction {
