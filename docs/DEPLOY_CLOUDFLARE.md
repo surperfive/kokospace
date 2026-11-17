@@ -65,6 +65,37 @@ npm run build
 npx wrangler deploy --dry-run     # 只打包校验配置，输出 bindings 就说明没问题
 ```
 
+### 想一句话跑完（Windows 脚本）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
+```
+
+脚本按顺序做 4 件事：检查 node → 缺依赖就 `npm install` → 检查登录（没登录会拉浏览器授权）→
+`vite build` → `wrangler deploy` → 打印房间链接。实测输出：
+
+```
+[0/4] 检查环境
+  OK  node v22.22.2 / npm 10.9.7
+[1/4] 安装依赖（已装过会很快）
+  !   node_modules 已存在，跳过
+[2/4] 检查 Cloudflare 登录状态
+  OK  账号 kccogk@outlook.com / Account ce72297a5f7faac96aeb087d4ad1b77e
+[3/4] 构建前端（vite build）
+  OK  dist/ 已生成
+[4/4] 上传到 Cloudflare（wrangler deploy）
+Deployed kokospace triggers (1.04 sec)
+  https://kokospace.kccogk.workers.dev
+完成。
+房间链接： https://kokospace.kccogk.workers.dev/?room=房间号
+```
+
+过程中的红字大多是 npm / wrangler 写到 stderr 的提示（例如「Proxy environment variables detected」），
+不是错误 —— 看最后的 `Deployed ... triggers` 和那行 URL 才算数。
+
+> 脚本必须存成 **UTF-8 with BOM**，否则 PowerShell 5.1 会按 GBK 解析中文并报 ParserError。
+> 改脚本后如果出现 `UnexpectedToken`，先检查 BOM。
+
 ### 常见报错
 
 | 现象 | 原因 / 处理 |
