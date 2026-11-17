@@ -18,6 +18,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # 先检查 Secret 是否配好，失败时给出人话提示，而不是让人对着
+      # 「npx failed with exit code 1」猜。
+      - name: Check Cloudflare secrets
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=0
+          if [ -z "$CF_TOKEN" ]; then
+            echo "::error title=缺少 CLOUDFLARE_API_TOKEN::仓库 Settings → Secrets and variables → Actions → New repository secret，Name 填 CLOUDFLARE_API_TOKEN，值填 Cloudflare API Token（模板 Edit Cloudflare Workers）"
+            missing=1
+          fi
+          if [ -z "$CF_ACCOUNT" ]; then
+            echo "::error title=缺少 CLOUDFLARE_ACCOUNT_ID::再加一条 Secret：Name 填 CLOUDFLARE_ACCOUNT_ID，值填 ce72297a5f7faac96aeb087d4ad1b77e"
+            missing=1
+          fi
+          if [ "$missing" = "1" ]; then exit 1; fi
+          echo "两个 Secret 都存在（token 长度 ${#CF_TOKEN}）"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4

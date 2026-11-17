@@ -116,6 +116,15 @@ Dashboard → Workers & Pages → `kokospace` → **Settings → Builds → Conn
 **Actions 报 Authentication error**
 → Secret 名字拼错（必须是 `CLOUDFLARE_API_TOKEN`），或 token 没给 Workers 权限（用「Edit Cloudflare Workers」模板）。
 
+**`Install dependencies` 和 `Build frontend` 都绿，只有 `Deploy worker + assets` 红**
+→ 基本就是 Secret 没配或名字不对。那一步 3 秒内就失败（正常部署要 20 秒以上），说明是认证问题不是网络问题。
+现在工作流前面加了 `Check Cloudflare secrets` 步骤，缺 Secret 会直接告诉你缺哪个、去哪儿加。
+
+**在 Cloudflare 控制台误开了 Pages 项目**
+→ Pages 只能放静态文件，这个项目进房间要靠 Durable Object + WebSocket，Pages 上跑不了。
+如果已经建了，去 Pages 项目 → Settings → 最下面 Delete project 删掉；重新走「Workers → Import a repository」。
+`*.pages.dev` 那个域名访问前端能打开，但进房间会一直重连。
+
 **部署成功但打开是 404**
 → 检查是不是访问了 `https://<worker>.<账号>.workers.dev` 而不是别的域名；`wrangler.jsonc` 里 `name` 就是 worker 名。
 
