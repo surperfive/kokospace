@@ -25,9 +25,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      # .npmrc 里已设 legacy-peer-deps=true，这里不用再带参数
+      # 用 npm install 而不是 npm ci：package-lock 与 package.json 偶尔会不同步
+      # （新增 wrangler / workers-types 时），npm ci 会直接失败；install 会自己补齐。
+      # .npmrc 里已设 legacy-peer-deps=true，这里不用再带参数。
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build frontend
         run: npm run build

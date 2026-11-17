@@ -16,6 +16,12 @@
 - `dist/` 在 .gitignore 里，部署时由 `npm run deploy`（vite build && wrangler deploy）现构建。
 - **本机直连 `*.workers.dev` 不通**（超时/代理 502），只能 `wrangler` 走 api.cloudflare.com 操作；线上验收要在能访问 CF 的网络里做。
 
+## 代码托管与发布
+- 仓库已 `git init -b main`，首个提交 `88a1f1f`。目标是 GitHub 托管 + Actions 自动部署（不推 GitHub Pages，Pages 跑不了 WS）。
+- `.github/workflows/deploy.yml` + 两个仓库 secret（`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`）→ push main 即上线。
+- `.npmrc` 里 `legacy-peer-deps=true`，CI 与本地都不用再带参数。
+- 前端 WS 默认同源，可用 `VITE_WS_URL` 覆盖（只在「前端单独托管」时才需要）。
+
 ## 已知限制
 - 房间状态只在内存（DO 内存 / Express Map），空房间会重置。
 - 语音是 P2P WebRTC，信令走业务 WS，无 TURN，严格 NAT 下可能连不上。

@@ -38,7 +38,10 @@ Cloudflare Workers（前端静态资源 + Durable Object 房间）  ← 访问�
 
 ### 1. 建一个空仓库
 
-GitHub → New repository → 名字随意（例如 `kokospace`）→ **不要**勾 "Add a README" / "Add .gitignore" → Create。
+打开 <https://github.com/new> → Repository name 填 `kokospace` → **不要**勾 "Add a README" / "Add .gitignore" / license → Create repository。
+
+> 建议选 **Public**：Actions 分钟数不限；私有仓库每月 2000 分钟（一次部署约 1 分钟，其实也够）。
+> 这个仓库里没有密钥（Firebase 的 apiKey 是前端公开配置，不是 secret），公开是安全的。
 
 ### 2. 建一个 Cloudflare API Token
 
@@ -62,12 +65,33 @@ Secret 只存加密值，不会出现在代码或日志里。
 
 ```powershell
 cd "C:\Users\OOW\Downloads\kokospace-—-2d-元宇宙多人共看影院 (1)"
-git remote add origin https://github.com/<你的用户名>/kokospace.git
+git remote add origin https://github.com/surperfive/kokospace.git
 git push -u origin main
 ```
 
-首次推送会弹 GitHub 登录窗口。推完去仓库的 **Actions** 标签页，能看到 `Deploy to Cloudflare Workers` 正在跑，
+首次推送会弹 GitHub 登录窗口（浏览器授权即可）。推完去仓库的 **Actions** 标签页，能看到 `Deploy to Cloudflare Workers` 正在跑，
 约 40 秒完成，最后输出 `https://kokospace.kccogk.workers.dev`。
+
+---
+
+## 另一条路：让 Cloudflare 自己拉 GitHub（不用建 API Token）
+
+如果你不想折腾 API Token，Cloudflare 现在也能**直接连 Git 仓库**，push 后由 Cloudflare 自己构建：
+
+Dashboard → Workers & Pages → `kokospace` → **Settings → Builds → Connect** → 授权 GitHub → 选仓库和 `main` 分支
+→ 构建命令填 `npm run build` → 部署命令填 `npx wrangler deploy` → Save。
+（`npm ci` 会自动读仓库里的 `.npmrc`，`legacy-peer-deps` 生效。）
+
+两条路的取舍：
+
+| | GitHub Actions（本仓库已配好） | Cloudflare Workers Builds |
+| --- | --- | --- |
+| 需要什么 | 2 个仓库 Secret（API Token + Account ID） | 只需在 Cloudflare 里授权一次 GitHub |
+| 构建日志 | 在 GitHub 的 Actions 页 | 在 Cloudflare 的 Builds 页 |
+| 适合 | 想留完整 CI 记录、以后加测试/lint | 只想「push 就上线」，越少配置越好 |
+
+⚠️ **两条路只能开一条**。同时开着，一次 push 会触发两次部署、互相覆盖。
+走 Workers Builds 的话，把 `.github/workflows/deploy.yml` 删掉或改名成 `.yml.bak` 再提交。
 
 ---
 
