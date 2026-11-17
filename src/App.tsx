@@ -130,6 +130,7 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const p2pRef = useRef<P2PRoom | null>(null);
   const p2pEnabledRef = useRef<boolean>(isP2PEnabled());
+  const p2pHostRef = useRef<string | null>(null);
   const audioMgrRef = useRef<SpatialAudioManager | null>(null);
   const playersRef = useRef<PlayerState[]>([]);
   const localIdRef = useRef<string>('');
@@ -295,14 +296,23 @@ export default function App() {
             void p2pRef.current?.handleSignal(msg.fromId, msg.signal);
             return;
           }
+          if (msg.type === 'p2p:host') {
+            // 房主刷新后重新认领身份，记下来给后面建链用
+            p2pHostRef.current = msg.hostId || null;
+            return;
+          }
           if (msg.type === 'room:init') {
-            // 云端只告诉我们谁是房主；真正的房间状态稍后由房主通过 DataChannel 下发
-            const role = msg.hostId === msg.playerId ? 'host' : 'guest';
+            // 云端只告诉我们谁是房主；真正的房间状态稍后由房主通过 DataChannel 下发。
+            // 房主刷新后云端可能会把 hostId 判给别人，所以本地记一份「我曾经是房主」。
+            const hostKey = `koko_p2p_host_${roomId}`;
+            const iWasHost = sessionStorage.getItem(hostKey) === msg.playerId;
+            const role = msg.hostId === msg.playerId || iWasHost ? 'host' : 'guest';
+            if (role === 'host') sessionStorage.setItem(hostKey, msg.playerId);
             if (!p2pRef.current) {
               const room = new P2PRoom({
                 roomId,
                 selfId: msg.playerId,
-                hostId: msg.hostId || msg.playerId,
+                hostId: p2pHostRef.current || msg.hostId || msg.playerId,
                 role,
                 sendSignal: (targetId, signal) => {
                   if (ws.readyState === WebSocket.OPEN) {
@@ -328,7 +338,12 @@ export default function App() {
               });
               p2pRef.current = room;
               room.start(joinPayload);
-              return; // 等房主下发 room:init
+
+              // 房主显式认领身份：刷新后云端可能把 hostId 判给了别人，
+              // 这一条让云端把房主改回来，后来的人才知道该连谁。
+              if (role === 'host' && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'p2p:host' }));
+              }              return; // 等房主下发 room:init
             }
           }
           if (msg.type !== 'webrtc:signal') return; // 其余云端消息在 P2P 模式下忽略

@@ -62,6 +62,8 @@ export class P2PRoom {
   private outbox: string[] = [];
   private joinMsg: Record<string, any> | null = null;
   private closed = false;
+  private persistTimer: number | null = null;
+  private everConnected = false;
   status: P2PStatus = 'connecting';
 
   constructor(opts: P2PRoomOptions) {
@@ -84,7 +86,9 @@ export class P2PRoom {
   start(joinMessage: Record<string, any>) {
     this.joinMsg = joinMessage;
     if (this.opts.role === 'host') {
+      this.restoreHostState();
       this.apply(this.core!.join(this.opts.selfId, joinMessage));
+      this.startPersisting();
       this.setStatus('connecting');
       return;
     }
@@ -98,8 +102,36 @@ export class P2PRoom {
     this.connectToHost();
   }
 
-  private createPeer(remoteId: string): PeerEntry {
-    const pc = new RTCPeerConnection(rtcConfig());
+  // ── 房主状态持久化：刷新页面后房间不会回到初始状态 ──
+  private storageKey(): string {
+    return `koko_host_state_${this.opts.roomId}`;
+  }
+
+  private restoreHostState() {
+    try {
+      const raw = localStorage.getItem(this.storageKey());
+      if (!raw) return;
+      this.core!.restoreState(JSON.parse(raw));
+    } catch {
+      /* 存档损坏就忽略 */
+    }
+  }
+
+  private startPersisting() {
+    if (this.persistTimer) window.clearInterval(this.persistTimer);
+    this.persistTimer = window.setInterval(() => this.persistNow(), 5000);
+  }
+
+  private persistNow() {
+    if (this.opts.role !== 'host' || !this.core) return;
+    try {
+      localStorage.setItem(this.storageKey(), JSON.stringify(this.core.exportState()));
+    } catch {
+      /* 隐私模式或超配额，忽略 */
+    }
+  }
+
+  private createPeer(remoteId: string): PeerEntry {    const pc = new RTCPeerConnection(rtcConfig());
     const entry: PeerEntry = { pc, dc: null, bindId: null };
     this.peers.set(remoteId, entry);
 
@@ -128,6 +160,7 @@ export class P2PRoom {
   private bindChannel(entry: PeerEntry, remoteId: string) {
     const dc = entry.dc!;
     dc.onopen = () => {
+      this.everConnected = true;
       if (this.opts.role === 'guest') {
         // 客人：连上后补发 join，房主据此注册并回 room:init
         if (this.joinMsg) dc.send(JSON.stringify(this.joinMsg));
@@ -159,7 +192,10 @@ export class P2PRoom {
           this.apply(this.core!.leave(pid));
         }
       } else {
-        this.setStatus('failed', '与房主的连接已断开');
+        this.setStatus(
+          'failed',
+          this.everConnected ? '房主已离开，已切回云端房间' : '直连房主失败，已切回云端房间'
+        );
       }
     };
     if (dc.readyState === 'open') {
@@ -303,6 +339,11 @@ export class P2PRoom {
 
   close() {
     this.closed = true;
+    if (this.persistTimer) {
+      window.clearInterval(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistNow();
     for (const entry of this.peers.values()) {
       try {
         entry.dc?.close();

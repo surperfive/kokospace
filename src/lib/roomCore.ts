@@ -328,6 +328,10 @@ export class RoomCore {
     const type = msg.type;
     const now = Date.now();
 
+    if (type === 'p2p:host') {
+      return this.declareP2PHost(playerId);
+    }
+
     if (type === 'player:move') {
       const x = Number(msg.x);
       const y = Number(msg.y);
@@ -532,7 +536,7 @@ export class RoomCore {
     return [];
   }
 
-  /** 玩家离开：清理 + 房主移交 + 广播 */
+  /** 房主离开：清理 + 房主移交 + 广播 */
   leave(playerId: string): Outbound[] {
     if (!this.players.has(playerId)) return [];
     this.players.delete(playerId);
@@ -553,6 +557,44 @@ export class RoomCore {
 
   get isEmpty(): boolean {
     return this.players.size === 0;
+  }
+
+  /**
+   * P2P 模式下，房主刷新/重连后重新「认领」房主身份。
+   * 云端按「第一个进来的人」判定 hostId，房主一刷新就会漂移到别人头上，
+   * 所以允许客户端显式宣告一次。
+   */
+  declareP2PHost(playerId: string): Outbound[] {
+    if (!this.players.has(playerId)) return [];
+    this.hostId = playerId;
+    for (const p of this.players.values()) p.isHost = p.id === playerId;
+    return [{ kind: 'all', payload: { type: 'p2p:host', hostId: playerId } }];
+  }
+
+  /** 房主刷新后要恢复的状态（视频进度、场景、聊天） */
+  exportState() {
+    return {
+      mapId: this.mapId,
+      furniture: this.furniture,
+      videoState: this.videoState,
+      chatHistory: this.chatHistory,
+    };
+  }
+
+  restoreState(state: {
+    mapId?: string;
+    furniture?: RoomFurnitureItem[];
+    videoState?: RoomVideoState;
+    chatHistory?: RoomChatMessage[];
+  }) {
+    if (state.mapId) this.mapId = state.mapId;
+    if (Array.isArray(state.furniture)) this.furniture = state.furniture.slice(0, 40);
+    if (state.videoState && state.videoState.currentItem) {
+      this.videoState = { ...state.videoState, updatedAtMs: Date.now() };
+    }
+    if (Array.isArray(state.chatHistory) && state.chatHistory.length) {
+      this.chatHistory = state.chatHistory.slice(-40);
+    }
   }
 
   /** HTTP 探测 / 调试用的房间快照 */
