@@ -20,6 +20,63 @@
 
 ---
 
+## 自己动手：最短路径（3 条命令）
+
+在项目目录里依次执行：
+
+```powershell
+cd "C:\Users\OOW\Downloads\kokospace-—-2d-元宇宙多人共看影院 (1)"
+
+npx wrangler login          # 只做一次，浏览器授权；已登录会直接跳过
+npm install                 # 只做一次（.npmrc 里已设 legacy-peer-deps）
+npm run deploy              # 每次发布都跑这条
+```
+
+`npm run deploy` 等价于 `vite build && wrangler deploy`，正常输出长这样：
+
+```
+Read 4 files from the assets directory ...\dist
+Uploaded 3 files (4.22 sec)
+Total Upload: 40.23 KiB / gzip: 10.13 KiB
+Worker Startup Time: 6 ms
+Your Worker has access to the following bindings:
+  env.ROOMS (RoomDurableObject)       Durable Object
+  env.ASSETS                          Assets
+Uploaded kokospace (9.09 sec)
+Deployed kokospace triggers (1.03 sec)
+  https://kokospace.kccogk.workers.dev
+```
+
+看到最后那行 URL 就是成功了。**手机上换个网络打开它 + `?room=test` 验收**（这台机器直连 workers.dev 不通，别用本机浏览器判断）。
+
+### 想确认账号对不对
+
+```powershell
+npx wrangler whoami     # 看 Email 和 Account ID
+```
+
+当前这台机器登录的是 `kccogk@outlook.com` / `ce72297a5f7faac96aeb087d4ad1b77e`。
+如果登错了账号，`npx wrangler logout` 再 `npx wrangler login`，注意换账号后 workers.dev 子域也会跟着变。
+
+### 部署前想先干跑一次（不上传）
+
+```powershell
+npm run build
+npx wrangler deploy --dry-run     # 只打包校验配置，输出 bindings 就说明没问题
+```
+
+### 常见报错
+
+| 现象 | 原因 / 处理 |
+| --- | --- |
+| `X [ERROR] Not logged in` | 没登录或 token 过期，`npx wrangler login` 重来 |
+| `npm error ERESOLVE` | 没读 `.npmrc`（可能被删了），加回 `legacy-peer-deps=true` 或手写 `npm install --legacy-peer-deps` |
+| `Cannot find module 'wrangler'` | 没装依赖，先 `npm install` |
+| `address already in use` | 只影响 `npm run cf:dev`，换端口 `--port 8788` |
+| 部署成功但打不开 | 本机网络到 `*.workers.dev` 被阻断，换网络或绑自定义域名 |
+
+---
+
 ## 方案 A：Workers + Durable Objects（推荐）
 
 ### 架构对应关系
