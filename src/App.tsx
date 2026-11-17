@@ -142,6 +142,8 @@ export default function App() {
   const localIdRef = useRef<string>('');
   const videoStateRef = useRef(videoState);
   const serverOffsetRef = useRef(serverTimeOffsetMs);
+  /** 点播人 mp4 元素的真实播放位置（由影院组件回传），比时钟外推可靠 */
+  const playbackTimeRef = useRef<number | null>(null);
   playersRef.current = players;
   localIdRef.current = localPlayerId;
   videoStateRef.current = videoState;
@@ -547,8 +549,14 @@ export default function App() {
           }
           case 'video:synced': {
             if (msg.videoState) setVideoState(msg.videoState);
-            if (msg.serverTimeMs) {
-              setServerTimeOffsetMs(msg.serverTimeMs - Date.now());
+            if (typeof msg.serverTimeMs === 'number') {
+              // 单条消息的 offset 含网络单程延迟，逐条套用会来回抖；
+              // 120ms 死区内不动，超出才半量跟随，时钟才稳。
+              setServerTimeOffsetMs((prev) => {
+                const measured = msg.serverTimeMs - Date.now();
+                if (Math.abs(measured - prev) < 120) return prev;
+                return Math.round(prev + (measured - prev) * 0.5);
+              });
             }
             if (msg.triggeredBy && msg.triggeredBy !== playerName && !msg.silent) {
               showToast(`${msg.triggeredBy} 同步更新了中央巨幕播放状态`);
@@ -602,20 +610,27 @@ export default function App() {
   }, [hasEnteredRoom, roomId]);
 
   // Actions & Handlers
-  // 点播人每 3 秒上报一次真实播放位置：服务端据此校准时间轴，
-  // 新进来的人就是靠这个 + updatedAtMs 对齐到同一秒。
+  // 点播人每 2 秒上报一次**真实播放位置**（不是时钟外推值）：
+  // 视频缓冲、解码慢、切后台都会让真实位置落后，只有元素自己知道。
+  // 上报后服务端广播静默同步，所有人重新对齐。
   useEffect(() => {
     if (!hasEnteredRoom) return;
     if (!videoState.controllerId || videoState.controllerId !== localPlayerId) return;
     const timer = window.setInterval(() => {
       const vs = videoStateRef.current;
-      const nowServer = Date.now() + serverOffsetRef.current;
-      const elapsed = vs.isPlaying ? Math.max(0, (nowServer - vs.updatedAtMs) / 1000) : 0;
-      let t = vs.currentTime + elapsed;
-      const dur = vs.currentItem.durationSec;
-      if (dur && dur > 0) t = t % dur;
+      let t: number;
+      if (vs.currentItem.sourceType === 'mp4' && playbackTimeRef.current != null) {
+        t = playbackTimeRef.current;
+      } else {
+        // 内置短片由时钟直接绘制，外推即是真实位置
+        const nowServer = Date.now() + serverOffsetRef.current;
+        const elapsed = vs.isPlaying ? Math.max(0, (nowServer - vs.updatedAtMs) / 1000) : 0;
+        t = vs.currentTime + elapsed;
+        const dur = vs.currentItem.durationSec;
+        if (dur && dur > 0) t = t % dur;
+      }
       sendGame(JSON.stringify({ type: 'video:control', action: 'progress', currentTime: t }));
-    }, 3000);
+    }, 2000);
     return () => window.clearInterval(timer);
   }, [hasEnteredRoom, localPlayerId, videoState.controllerId, sendGame]);
 
@@ -733,6 +748,11 @@ export default function App() {
     sendGame(JSON.stringify({ type: 'player:chat', text }));
     setChatInput('');
   };
+
+  /** 影院组件回传 mp4 真实播放位置，供点播人上报使用 */
+  const handlePlaybackTime = useCallback((t: number) => {
+    playbackTimeRef.current = t;
+  }, []);
 
   const handleVideoControl = (action: 'play' | 'pause' | 'seek', currentTime?: number) => {
     // 进度只由点播人控制；别人点了只给提示，不发消息
@@ -1028,6 +1048,7 @@ export default function App() {
             onToggleTheaterFocus={() => setIsTheaterFocused((v) => !v)}
             onOpenQueue={() => setShowQueueDrawer(true)}
             onVideoControl={handleVideoControl}
+            onPlaybackTime={handlePlaybackTime}
             canControlProgress={
               !videoState.controllerId || videoState.controllerId === localPlayerId
             }

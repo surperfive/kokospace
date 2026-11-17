@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Play,
   Pause,
@@ -25,6 +25,8 @@ interface CentralCinemaScreenProps {
   onVideoControl: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
   /** 当前用户是否是点播人：不是就只能看，进度条与播放键禁用 */
   canControlProgress?: boolean;
+  /** 上报 mp4 的真实播放位置（点播人用它当权威时间源） */
+  onPlaybackTime?: (time: number) => void;
   activeWidgets: StageWidgetPlugin[];
 }
 
@@ -41,36 +43,72 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onOpenQueue,
   onVideoControl,
   canControlProgress = true,
+  onPlaybackTime,
   activeWidgets,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const builtinCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [muted, setMuted] = useState(false);
   const [displayTime, setDisplayTime] = useState(0);
+  const [mediaDuration, setMediaDuration] = useState(0);
+  const [seekDraft, setSeekDraft] = useState<number | null>(null);
+  const seekTimerRef = useRef<number | null>(null);
+  const displayedSecRef = useRef(-1);
 
   const item = videoState.currentItem;
+  const isMp4 = item.sourceType === 'mp4';
+
+  // 回调放进 ref，避免父组件每次渲染都重建事件监听
+  const onPlaybackTimeRef = useRef(onPlaybackTime);
+  onPlaybackTimeRef.current = onPlaybackTime;
 
   const getExpectedTime = () => {
     if (!videoState.isPlaying) return videoState.currentTime;
     const nowServer = Date.now() + serverTimeOffsetMs;
     const elapsed = Math.max(0, (nowServer - videoState.updatedAtMs) / 1000);
     const total = videoState.currentTime + elapsed;
-    if (item.durationSec && item.durationSec > 0) {
-      return total % item.durationSec;
+    const dur = isMp4 && mediaDuration > 0 ? mediaDuration : item.durationSec;
+    if (dur && dur > 0) {
+      // mp4 不循环，到片尾就停在总时长；内置短片是循环动画，取模
+      return isMp4 ? Math.min(total, dur) : total % dur;
     }
     return total;
   };
 
-  // Sync HTML5 MP4 video element with server-authoritative clock
+  /** 当前真实播放位置：mp4 读元素，其它（内置短片）就是服务端时钟 */
+  const currentPlaybackTime = () => {
+    const el = videoRef.current;
+    if (isMp4 && el && el.readyState >= 1 && Number.isFinite(el.currentTime)) {
+      return el.currentTime;
+    }
+    return getExpectedTime();
+  };
+
+  // 点播人上报真实播放位置：seek 中 / 未就绪时不上报，避免把别人的进度拉回去
   useEffect(() => {
-    if (item.sourceType !== 'mp4') return;
+    if (!isMp4) return;
+    const el = videoRef.current;
+    if (!el) return;
+    const report = () => {
+      if (el.seeking || el.readyState < 2) return;
+      if (!Number.isFinite(el.currentTime)) return;
+      onPlaybackTimeRef.current?.(el.currentTime);
+    };
+    el.addEventListener('timeupdate', report);
+    el.addEventListener('seeked', report);
+    report();
+    return () => {
+      el.removeEventListener('timeupdate', report);
+      el.removeEventListener('seeked', report);
+    };
+  }, [isMp4, item.url]);
+
+  // 播放/暂停交给这个 effect；进度对齐统一放到下面的逐帧循环里做
+  useEffect(() => {
+    if (!isMp4) return;
     const el = videoRef.current;
     if (!el) return;
 
-    const expected = getExpectedTime();
-    if (Math.abs(el.currentTime - expected) > 0.85) {
-      el.currentTime = expected;
-    }
     if (videoState.isPlaying && el.paused) {
       el.play().catch(() => {
         // Browser autoplay policy fallback: mute and retry
@@ -81,27 +119,79 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
     } else if (!videoState.isPlaying && !el.paused) {
       el.pause();
     }
-  }, [videoState, item.url, item.sourceType]);
+  }, [videoState.isPlaying, item.url, isMp4]);
 
-  // Animate built-in vector short films synchronized to videoState
+  // 换片 / 卸载时清掉待提交的 seek
+  useEffect(() => {
+    return () => {
+      if (seekTimerRef.current) window.clearTimeout(seekTimerRef.current);
+    };
+  }, [item.id]);
+
+  // 逐帧：UI 进度 + 非点播人持续追踪权威时间（含缓冲后的追赶）
   useEffect(() => {
     let raf = 0;
     const tick = () => {
-      const t = getExpectedTime();
-      setDisplayTime(t);
+      const el = videoRef.current;
+      const serverTime = getExpectedTime();
+
+      // 只有点播人是"源"，不对齐自己；其他人（以及缓冲落后的情况）持续追
+      if (isMp4 && el && !canControlProgress && !el.seeking) {
+        if (!videoState.isPlaying) {
+          // 暂停状态也要对位：别人暂停在 100s，你要停在 100s
+          if (el.readyState >= 1 && Math.abs(serverTime - el.currentTime) > 0.3) {
+            try {
+              el.currentTime = serverTime;
+            } catch {
+              /* ignore */
+            }
+          }
+          if (el.playbackRate !== 1) el.playbackRate = 1;
+        } else if (el.readyState >= 2) {
+          const drift = serverTime - el.currentTime;
+          const abs = Math.abs(drift);
+          if (abs > 0.3) {
+            // 大漂移：直接跳（缓冲、卡顿、别人 seek 之后）
+            try {
+              el.currentTime = serverTime;
+            } catch {
+              /* ignore */
+            }
+            if (el.playbackRate !== 1) el.playbackRate = 1;
+          } else if (abs > 0.06) {
+            // 小漂移：改播放速率追，避免画面跳帧
+            el.playbackRate = 1 + Math.max(-0.1, Math.min(0.1, drift * 0.6));
+          } else if (el.playbackRate !== 1) {
+            el.playbackRate = 1;
+          }
+        }
+      } else if (isMp4 && el && el.playbackRate !== 1) {
+        el.playbackRate = 1;
+      }
+
+      const t = isMp4 && el && el.readyState >= 1 && Number.isFinite(el.currentTime)
+        ? el.currentTime
+        : serverTime;
+
+      // 只在整秒变化时 setState，避免 60fps 重渲染整个影院组件
+      const sec = Math.floor(t);
+      if (sec !== displayedSecRef.current) {
+        displayedSecRef.current = sec;
+        setDisplayTime(t);
+      }
 
       if (item.sourceType === 'builtin' && builtinCanvasRef.current) {
         const canvas = builtinCanvasRef.current;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          drawBuiltinVectorFilm(ctx, canvas.width, canvas.height, t, item.builtinMode || 'cosmos');
+          drawBuiltinVectorFilm(ctx, canvas.width, canvas.height, serverTime, item.builtinMode || 'cosmos');
         }
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [videoState, item.id, item.sourceType, item.builtinMode]);
+  }, [videoState, item.id, item.sourceType, item.builtinMode, isMp4, canControlProgress, mediaDuration]);
 
   const formatSec = (sec: number) => {
     const s = Math.floor(sec);
@@ -135,7 +225,35 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
         zIndex: 12,
       };
 
-  const duration = item.durationSec || 180;
+  // mp4 用元素真实时长；内置短片用条目自带的时长；iframe 没有可信时长
+  const duration =
+    isMp4 && mediaDuration > 0 && Number.isFinite(mediaDuration)
+      ? Math.floor(mediaDuration)
+      : item.durationSec || 180;
+
+  // iframe（YouTube / B 站）无法在播放中控进度，但可以按当前进度决定起播点。
+  // 必须用 useMemo 锁住：src 每变一次 iframe 就会重新加载。
+  const iframeStartRef = useRef(0);
+  const iframeSrc = useMemo(() => {
+    if (item.sourceType !== 'youtube' && item.sourceType !== 'bilibili') return item.url;
+    const start = Math.floor(getExpectedTime());
+    iframeStartRef.current = start;
+    if (start < 3) return item.url;
+    try {
+      const u = new URL(item.url);
+      if (item.sourceType === 'youtube') {
+        u.searchParams.set('start', String(start));
+        u.searchParams.set('autoplay', '1');
+      } else {
+        u.searchParams.set('t', String(start));
+        u.searchParams.set('autoplay', '1');
+      }
+      return u.toString();
+    } catch {
+      return item.url;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, item.url, item.sourceType]);
 
   return (
     <>
@@ -215,14 +333,18 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               src={item.url}
               muted={muted}
               playsInline
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration;
+                if (Number.isFinite(d) && d > 0) setMediaDuration(d);
+              }}
               className="w-full h-full object-contain bg-black"
             />
           )}
 
           {(item.sourceType === 'youtube' || item.sourceType === 'bilibili') && (
             <iframe
-              key={item.url}
-              src={item.url}
+              key={`${item.id}-${iframeSrc}`}
+              src={iframeSrc}
               title={item.title}
               className="w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -234,7 +356,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
           {!videoState.isPlaying && (item.sourceType === 'builtin' || item.sourceType === 'mp4') && (
             <button
               type="button"
-              onClick={() => canControlProgress && onVideoControl('play', displayTime)}
+              onClick={() => canControlProgress && onVideoControl('play', currentPlaybackTime())}
               disabled={!canControlProgress}
               title={canControlProgress ? '继续播放' : `由「${videoState.controllerName || '点播人'}」控片，你只能观看`}
               className={`absolute inset-0 flex items-center justify-center bg-black/35 transition-colors ${
@@ -255,7 +377,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               type="button"
               onClick={() =>
                 canControlProgress &&
-                onVideoControl(videoState.isPlaying ? 'pause' : 'play', displayTime)
+                onVideoControl(videoState.isPlaying ? 'pause' : 'play', currentPlaybackTime())
               }
               disabled={!canControlProgress}
               className={`p-1 rounded transition-colors ${
@@ -271,8 +393,27 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               min={0}
               max={duration}
               step={1}
-              value={Math.min(duration, Math.floor(displayTime))}
-              onChange={(e) => onVideoControl('seek', Number(e.target.value))}
+              value={seekDraft ?? Math.min(duration, Math.floor(displayTime))}
+              onChange={(e) => {
+                if (!canControlProgress) return;
+                const v = Number(e.target.value);
+                setSeekDraft(v);
+                // 拖动时先本地跟手，停手 200ms 才发一次 seek，避免刷屏广播
+                if (seekTimerRef.current) window.clearTimeout(seekTimerRef.current);
+                seekTimerRef.current = window.setTimeout(() => {
+                  seekTimerRef.current = null;
+                  const el = videoRef.current;
+                  if (isMp4 && el) {
+                    try {
+                      el.currentTime = v;
+                    } catch {
+                      /* ignore */
+                    }
+                  }
+                  onVideoControl('seek', v);
+                  setSeekDraft(null);
+                }, 200);
+              }}
               disabled={!canControlProgress}
               className={`flex-1 h-1.5 accent-[#FF5A36] ${
                 canControlProgress ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'

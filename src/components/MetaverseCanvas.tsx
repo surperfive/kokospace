@@ -38,6 +38,8 @@ interface MetaverseCanvasProps {
   onToggleTheaterFocus: () => void;
   onOpenQueue: () => void;
   onVideoControl: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
+  /** 点播人 mp4 真实播放位置回传 */
+  onPlaybackTime?: (time: number) => void;
   /** 当前用户是否是点播人（不是就只能看） */
   canControlProgress?: boolean;
   onProximityUpdate?: (nearbyCount: number, inStageZone: boolean) => void;
@@ -62,6 +64,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   onToggleTheaterFocus,
   onOpenQueue,
   onVideoControl,
+  onPlaybackTime,
   canControlProgress = true,
   onProximityUpdate,
 }) => {
@@ -542,6 +545,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         onToggleTheaterFocus={onToggleTheaterFocus}
         onOpenQueue={onOpenQueue}
         onVideoControl={onVideoControl}
+        onPlaybackTime={onPlaybackTime}
         canControlProgress={canControlProgress}
         activeWidgets={activeWidgets}
       />
