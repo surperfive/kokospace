@@ -1,5 +1,26 @@
 # 部署到 EdgeOne（含国内访问的真实前提）
 
+## 先说「卡」到底卡在哪
+
+- **人物移动一顿一顿 / 操作有延迟** → 是 WebSocket 往返延迟。把前端静态资源搬到 EdgeOne **没用**，
+  因为页面本身几百毫秒就加载完了，真正一路跨洋的是那条 WS 长连接。
+- **首屏白屏久** → 才是静态资源问题，EdgeOne / 任意 CDN 都能救。
+
+结论：要「不卡」，WS 服务必须挪到离用户近的机器（中国大陆或香港）。EdgeOne 只是顺带把静态资源缓存掉。
+
+三条真正能落地的路：
+
+| 路线 | 大陆延迟 | 备案 | 月成本 | 适合 |
+| --- | --- | --- | --- | --- |
+| ① 香港轻量服务器 + Docker 镜像 + 自有域名 | 30–80ms | **不用** | ¥24–60 | **只想不卡、不想折腾备案** |
+| ② EdgeOne（大陆区）+ 大陆服务器 | 20–50ms | **要**（1–3 周） | ¥60+ | 要极致手感、肯花时间备案 |
+| ③ EdgeOne Pages（不含大陆区）+ 外部 WS | 30–80ms | 不用 | ¥24–60 | 想顺手用 Pages 管前端 |
+
+**如果只是「有点卡、想顺一点」，① 就够了，不需要 EdgeOne。** 下文的 A/B 是 EdgeOne 的两种组合，
+看你选哪条再往下读。
+
+---
+
 ## 先明确一件事
 
 **EdgeOne 的 serverless 跑不了这个项目的房间服务。**
@@ -13,6 +34,43 @@
 | **边缘安全加速平台（CDN）** | ✓ | 支持 WebSocket 回源，但空闲超时最长 300 秒 |
 
 所以能落地的只有两种组合，**房间服务必须跑在一台常驻主机上**（云服务器 / 云托管容器）。
+
+---
+
+## 路线①：香港轻量 + Docker（免备案，30 分钟能上线）
+
+不需要 EdgeOne，也不需要备案。适合「只想不卡」的情况。
+
+```bash
+# 1) 服务器（腾讯云/阿里云轻量，选「香港」地域，1核2G，Debian 12 / Ubuntu 22.04）
+ssh root@你的服务器IP
+
+# 2) 装 docker
+curl -fsSL https://get.docker.com | sh
+
+# 3) 拉代码 + 构建镜像（前端 dist 和 WS 服务在同一个容器里）
+git clone https://github.com/surperfive/kokospace.git && cd kokospace
+docker build -f deploy/Dockerfile -t kokospace .
+docker run -d --name kokospace -p 127.0.0.1:3000:3000 --restart unless-stopped kokospace
+
+# 4) 自检
+curl -s http://127.0.0.1:3000/api/health
+```
+
+再用 Caddy 自动签证书 + 反代（比 nginx 少写一堆配置）：
+
+```bash
+apt install -y caddy
+caddy reverse-proxy --from koko.你的域名.com --to 127.0.0.1:3000
+```
+
+域名只需一条 A 记录指向服务器 IP，**不需要备案**（服务器在境外/香港）。完成后：
+
+- 页面：`https://koko.你的域名.com/?room=test`
+- 接口：`https://koko.你的域名.com/api/health`
+- WebSocket 同源，不用设 `VITE_WS_URL`
+
+大陆到香港一般 30–80ms，人物移动会比走 Cloudflare 顺很多。
 
 ---
 
