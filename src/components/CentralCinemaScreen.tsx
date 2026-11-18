@@ -72,9 +72,10 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onPlaybackTimeRef.current = onPlaybackTime;
   const onMediaEndedRef = useRef(onMediaEnded);
   onMediaEndedRef.current = onMediaEnded;
-  /** 内置短片是循环动画，用"时间回绕"判断跑完一轮 */
+  /** 内置短片是循环动画，用"时间回绕"或到达时长判断跑完一轮 */
   const prevBuiltinTimeRef = useRef<number | null>(null);
   const builtinItemRef = useRef<string>('');
+  const endedSentKeyRef = useRef<string | null>(null);
 
   const getExpectedTime = () => {
     if (!videoState.isPlaying) return videoState.currentTime;
@@ -133,10 +134,19 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
     } else if (!videoState.isPlaying && !el.paused) {
       el.pause();
     }
-  }, [videoState.isPlaying, item.url, isMp4]);
+  }, [videoState.isPlaying, item.id, item.url, isMp4]);
 
-  // 换片 / 卸载时清掉待提交的 seek
+  // 换片时重置上一段视频的时长、展示时间、待提交 seek 与结束防重锁
   useEffect(() => {
+    setMediaDuration(0);
+    setSeekDraft(null);
+    displayedSecRef.current = -1;
+    setDisplayTime(videoState.currentTime || 0);
+    endedSentKeyRef.current = null;
+    if (seekTimerRef.current) {
+      window.clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = null;
+    }
     return () => {
       if (seekTimerRef.current) window.clearTimeout(seekTimerRef.current);
     };
@@ -202,7 +212,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
         }
       }
 
-      // 内置短片循环播放，跑到片尾就当作"这一部播完"，让队列继续往下走
+      // 内置短片到达片尾就当作"这一部播完"，自动推进下一部
       if (item.sourceType === 'builtin' && canControlProgress) {
         if (builtinItemRef.current !== item.id) {
           builtinItemRef.current = item.id;
@@ -210,8 +220,18 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
         }
         const dur = item.durationSec || 180;
         const prev = prevBuiltinTimeRef.current;
-        if (prev != null && dur > 5 && prev > dur - 2 && serverTime < 2) {
-          onMediaEndedRef.current?.();
+        const rawElapsed = videoState.isPlaying
+          ? Math.max(0, (Date.now() + serverTimeOffsetMs - videoState.updatedAtMs) / 1000)
+          : 0;
+        const rawTotal = videoState.currentTime + rawElapsed;
+        const wrappedAtEnd = prev != null && dur > 5 && prev > dur - 2 && serverTime < 2;
+        const reachedEnd = videoState.isPlaying && dur > 5 && rawTotal >= dur;
+        if (wrappedAtEnd || reachedEnd) {
+          const endKey = `${item.id}:${videoState.updatedAtMs}`;
+          if (endedSentKeyRef.current !== endKey) {
+            endedSentKeyRef.current = endKey;
+            onMediaEndedRef.current?.();
+          }
         }
         prevBuiltinTimeRef.current = serverTime;
       }
@@ -219,7 +239,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [videoState, item.id, item.sourceType, item.builtinMode, isMp4, canControlProgress, mediaDuration]);
+  }, [videoState, serverTimeOffsetMs, item.id, item.sourceType, item.builtinMode, isMp4, canControlProgress, mediaDuration]);
 
   const formatSec = (sec: number) => {
     const s = Math.floor(sec);
@@ -370,17 +390,33 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
 
           {item.sourceType === 'mp4' && (
             <video
+              key={item.id}
               ref={videoRef}
               src={item.url}
+              autoPlay={videoState.isPlaying}
               muted={muted}
               playsInline
               onLoadedMetadata={(e) => {
                 const d = e.currentTarget.duration;
                 if (Number.isFinite(d) && d > 0) setMediaDuration(d);
               }}
+              onCanPlay={(e) => {
+                const el = e.currentTarget;
+                if (videoState.isPlaying && el.paused) {
+                  el.play().catch(() => {
+                    el.muted = true;
+                    setMuted(true);
+                    el.play().catch(() => {});
+                  });
+                }
+              }}
               onEnded={() => {
                 // 只有点播人是权威，其他人的 ended 时序不可靠
-                if (canControlProgress) onMediaEndedRef.current?.();
+                if (!canControlProgress) return;
+                const endKey = `${item.id}:${videoState.updatedAtMs}`;
+                if (endedSentKeyRef.current === endKey) return;
+                endedSentKeyRef.current = endKey;
+                onMediaEndedRef.current?.();
               }}
               className="w-full h-full object-contain bg-black"
             />

@@ -560,6 +560,10 @@ export class RoomCore {
       } else if (action === 'next') {
         // 播完 / 手动跳过：控片人或房主可推进
         if (!canAdvance()) return denyProgress();
+        // 防多端同时上报导致连续跳两部
+        if (typeof msg.expectedItemId === 'string' && msg.expectedItemId !== vs.currentItem.id) {
+          return [];
+        }
         const idx = vs.queue.findIndex((q) => q.id === vs.currentItem.id);
         const nextItem = idx >= 0 ? vs.queue[idx + 1] : undefined;
         if (nextItem) {
@@ -577,8 +581,20 @@ export class RoomCore {
                 : playerId;
           vs.controllerId = ownerId;
           vs.controllerName = this.players.get(ownerId)?.name || nextItem.addedBy || '';
+        } else if (vs.isPlaceholder && vs.queue.length === 0) {
+          // 待机状态下无人点播：自动轮播内置精选片库的下一部
+          const defIdx = DEFAULT_PLAYLIST.findIndex((d) => d.id === vs.currentItem.id);
+          const nextDefault =
+            DEFAULT_PLAYLIST[(defIdx >= 0 ? defIdx + 1 : 1) % DEFAULT_PLAYLIST.length];
+          vs.currentItem = { ...nextDefault };
+          vs.currentTime = 0;
+          vs.isPlaying = true;
+          vs.updatedAtMs = now;
+          vs.isPlaceholder = true;
+          vs.controllerId = null;
+          vs.controllerName = '';
         } else {
-          // 队列放完：回到待机短片，清空已播队列，谁都能重新点播
+          // 自定义队列全部放完：回到待机短片，清空已播队列，谁都能重新点播
           vs.queue = [];
           vs.currentItem = { ...DEFAULT_PLAYLIST[0] };
           vs.currentTime = 0;

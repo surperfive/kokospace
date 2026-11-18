@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AvatarConfig,
   FloatingReaction,
   FurnitureItem,
   FurnitureType,
@@ -16,6 +17,7 @@ interface MetaverseCanvasProps {
   mapTheme: MapThemeDefinition;
   players: PlayerState[];
   localPlayerId: string;
+  localFallback?: { name: string; avatar: AvatarConfig };
   furniture: FurnitureItem[];
   videoState: VideoState;
   serverTimeOffsetMs: number;
@@ -54,6 +56,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   mapTheme,
   players,
   localPlayerId,
+  localFallback,
   furniture,
   videoState,
   serverTimeOffsetMs,
@@ -106,6 +109,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     mapTheme,
     players,
     localPlayerId,
+    localFallback,
     furniture,
     chatBubbles,
     joystickVector,
@@ -117,6 +121,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     mapTheme,
     players,
     localPlayerId,
+    localFallback,
     furniture,
     chatBubbles,
     joystickVector,
@@ -225,6 +230,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     let lastUiCheckTs = 0;
     let camX = camera.x;
     let camY = camera.y;
+    let lastCommittedCamX = camX;
+    let lastCommittedCamY = camY;
     let wasMoving = false;
 
     const isBlocked = (nx: number, ny: number, theme: MapThemeDefinition) => {
@@ -252,6 +259,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         mapTheme: theme,
         players: currentPlayers,
         localPlayerId: meId,
+        localFallback: fallbackIdentity,
         furniture: items,
         chatBubbles: bubbles,
         joystickVector: joy,
@@ -310,14 +318,18 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
       if ((isMoving || wasMoving) && now - lastEmitTs > 50) {
         lastEmitTs = now;
-        emitMove({
-          x: lp.x,
-          y: lp.y,
-          dir: lp.dir,
-          isMoving,
-          isSitting: lp.isSitting,
-          seatId: lp.seatId,
-        });
+        try {
+          emitMove({
+            x: lp.x,
+            y: lp.y,
+            dir: lp.dir,
+            isMoving,
+            isSitting: lp.isSitting,
+            seatId: lp.seatId,
+          });
+        } catch (err) {
+          console.warn('[canvas] emitMove failed:', err);
+        }
       }
       wasMoving = isMoving;
 
@@ -326,7 +338,11 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
       const targetCamY = Math.max(360, lp.y - 110);
       camX += (targetCamX - camX) * Math.min(1, dt * 6);
       camY += (targetCamY - camY) * Math.min(1, dt * 6);
-      setCamera({ x: camX, y: camY });
+      if (Math.abs(camX - lastCommittedCamX) > 0.25 || Math.abs(camY - lastCommittedCamY) > 0.25) {
+        lastCommittedCamX = camX;
+        lastCommittedCamY = camY;
+        setCamera({ x: camX, y: camY });
+      }
 
       // Periodic UI proximity & seat check (~6Hz)
       if (now - lastUiCheckTs > 160) {
@@ -423,7 +439,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             if (!aliveIds.has(id)) remotePos.delete(id);
           }
 
-          const renderList = currentPlayers.map((p) =>
+          const hasMeInList = Boolean(meId && currentPlayers.some((p) => p.id === meId));
+          const renderList: PlayerState[] = currentPlayers.map((p) =>
             p.id === meId
               ? {
                   ...p,
@@ -440,6 +457,23 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
                   y: remotePos.get(p.id)?.y ?? p.y,
                 }
           );
+          // Even before room:init arrives (or if WS is reconnecting), always draw the local character
+          if (!hasMeInList && fallbackIdentity) {
+            renderList.push({
+              id: meId || '__local_preview__',
+              name: fallbackIdentity.name,
+              avatar: fallbackIdentity.avatar,
+              x: lp.x,
+              y: lp.y,
+              dir: lp.dir,
+              isMoving,
+              isSitting: lp.isSitting,
+              seatId: lp.seatId,
+              isMicOn: false,
+              isBroadcasting: false,
+              isHost: false,
+            });
+          }
           renderList.sort((a, b) => a.y - b.y);
 
           const nowMs = Date.now();
@@ -525,7 +559,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     <div
       ref={containerRef}
       onWheel={handleWheel}
-      className="relative w-full h-full overflow-hidden select-none"
+      className="absolute inset-0 overflow-hidden select-none"
     >
       <canvas
         ref={canvasRef}

@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
-import { X, Play, Plus, Trash2, Link2, Film } from 'lucide-react';
-import { VideoQueueItem, VideoState } from '../types/metaverse';
-import { BUILTIN_VIDEOS } from '../data/maps';
+import { X, Play, Plus, Trash2, Link2 } from 'lucide-react';
+import { VideoState } from '../types/metaverse';
 
 interface VideoQueueDrawerProps {
   isOpen: boolean;
   videoState: VideoState;
   onClose: () => void;
-  onSelectVideo: (item: VideoQueueItem) => void;
   onEnqueueUrl: (url: string, title: string) => Promise<void>;
   onRemoveFromQueue: (itemId: string) => void;
 }
@@ -16,7 +14,6 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
   isOpen,
   videoState,
   onClose,
-  onSelectVideo,
   onEnqueueUrl,
   onRemoveFromQueue,
 }) => {
@@ -148,39 +145,6 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
                   </div>
                 );
               })}
-            </div>
-          </section>
-
-          {/* Built-in Curated Library */}
-          <section className="space-y-2.5">
-            <h4 className="text-xs font-semibold text-zinc-700">内置精选片库</h4>
-            <p className="text-[11px] text-zinc-500 -mt-1">点击即点播，排队规则同上</p>
-            <div className="grid grid-cols-1 gap-2.5">
-              {BUILTIN_VIDEOS.map((vid) => (
-                <button
-                  key={vid.id}
-                  type="button"
-                  onClick={() => onSelectVideo(vid)}
-                  className="flex items-center gap-3 p-2.5 rounded-2xl border border-zinc-200 bg-white hover:border-zinc-300 text-left transition-colors cursor-pointer"
-                >
-                  <div className="w-20 h-12 rounded-xl overflow-hidden bg-zinc-900 shrink-0 flex items-center justify-center">
-                    {vid.thumbnail ? (
-                      <img
-                        src={vid.thumbnail}
-                        alt={vid.title}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <Film className="w-5 h-5 text-zinc-400" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-zinc-900 truncate">{vid.title}</div>
-                    <div className="text-[11px] text-zinc-500 mt-0.5 truncate">{vid.addedBy}</div>
-                  </div>
-                </button>
-              ))}
             </div>
           </section>
         </div>

@@ -23,9 +23,10 @@ export const AvatarPreviewCanvas: React.FC<AvatarPreviewCanvasProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           const dpr = window.devicePixelRatio || 1;
-          if (canvas.width !== size * dpr) {
-            canvas.width = size * dpr;
-            canvas.height = size * dpr;
+          const targetSize = Math.floor(size * dpr);
+          if (canvas.width !== targetSize || canvas.height !== targetSize) {
+            canvas.width = targetSize;
+            canvas.height = targetSize;
           }
           ctx.save();
           ctx.scale(dpr, dpr);

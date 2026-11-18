@@ -28,7 +28,6 @@ import {
   MapId,
   PlayerState,
   ScenePreset,
-  VideoQueueItem,
   VideoState,
 } from './types/metaverse';
 import { BUILTIN_MAPS, BUILTIN_VIDEOS, DEFAULT_AVATAR } from './data/maps';
@@ -101,7 +100,8 @@ export default function App() {
     isPlaying: true,
     currentTime: 0,
     updatedAtMs: Date.now(),
-    queue: BUILTIN_VIDEOS,
+    queue: [],
+    isPlaceholder: true,
   });
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -159,12 +159,13 @@ export default function App() {
     return allMaps.find((m) => m.id === mapId) || allMaps[0] || BUILTIN_MAPS[0];
   }, [allMaps, mapId]);
 
-  /** 队列里当前项之后还有内容 → 显示「下一部」 */
+  /** 队列里当前项之后还有内容，或待机状态下可切内置片库下一部 → 显示「下一部」 */
   const hasNext = useMemo(() => {
     const q = videoState.queue || [];
     const idx = q.findIndex((it) => it.id === videoState.currentItem.id);
-    return idx >= 0 && idx < q.length - 1;
-  }, [videoState.queue, videoState.currentItem.id]);
+    if (idx >= 0 && idx < q.length - 1) return true;
+    return Boolean(videoState.isPlaceholder && q.length === 0);
+  }, [videoState.queue, videoState.currentItem.id, videoState.isPlaceholder]);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -183,7 +184,9 @@ export default function App() {
       return;
     }
     const socket = wsRef.current;
-    socket?.send(payload);
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+    }
   }, []);
 
   // Detect touch capability for responsive virtual joystick
@@ -443,7 +446,7 @@ export default function App() {
             setMapId(msg.mapId);
             // 兜底：万一列表里没有自己（P2P 客人尚未拿到房主 init、或房间状态异常），
             // 补一条自己的记录，否则画布上会「看不到自己的角色」。
-            const initPlayers: PlayerState[] = msg.players || [];
+            const initPlayers: PlayerState[] = Array.isArray(msg.players) ? [...msg.players] : [];
             if (msg.playerId && !initPlayers.some((p) => p.id === msg.playerId)) {
               initPlayers.push({
                 id: msg.playerId,
@@ -575,7 +578,12 @@ export default function App() {
             break;
           }
           case 'video:synced': {
-            if (msg.videoState) setVideoState(msg.videoState);
+            if (msg.videoState) {
+              if (msg.videoState.currentItem?.id !== videoStateRef.current.currentItem.id) {
+                playbackTimeRef.current = null;
+              }
+              setVideoState(msg.videoState);
+            }
             if (typeof msg.serverTimeMs === 'number') {
               // 单条消息的 offset 含网络单程延迟，逐条套用会来回抖；
               // 120ms 死区内不动，超出才半量跟随，时钟才稳。
@@ -636,6 +644,11 @@ export default function App() {
     };
   }, [hasEnteredRoom, roomId, manuallyDisconnected]);
 
+  // 换片时清掉上一部的真实播放位置，防止进度上报定时器把旧时间写进新视频
+  useEffect(() => {
+    playbackTimeRef.current = null;
+  }, [videoState.currentItem.id]);
+
   // Actions & Handlers
   // 点播人每 2 秒上报一次**真实播放位置**（不是时钟外推值）：
   // 视频缓冲、解码慢、切后台都会让真实位置落后，只有元素自己知道。
@@ -646,15 +659,27 @@ export default function App() {
     const timer = window.setInterval(() => {
       const vs = videoStateRef.current;
       let t: number;
-      if (vs.currentItem.sourceType === 'mp4' && playbackTimeRef.current != null) {
+      if (vs.currentItem.sourceType === 'mp4') {
+        if (playbackTimeRef.current == null) return;
         t = playbackTimeRef.current;
-      } else {
-        // 内置短片由时钟直接绘制，外推即是真实位置
+      } else if (vs.currentItem.sourceType === 'builtin') {
+        // 内置短片由时钟直接绘制，外推即是真实位置；若已到片尾则直接推进下一部
         const nowServer = Date.now() + serverOffsetRef.current;
         const elapsed = vs.isPlaying ? Math.max(0, (nowServer - vs.updatedAtMs) / 1000) : 0;
         t = vs.currentTime + elapsed;
         const dur = vs.currentItem.durationSec;
-        if (dur && dur > 0) t = t % dur;
+        if (vs.isPlaying && dur && dur > 5 && t >= dur) {
+          sendGame(
+            JSON.stringify({
+              type: 'video:control',
+              action: 'next',
+              expectedItemId: vs.currentItem.id,
+            })
+          );
+          return;
+        }
+      } else {
+        return;
       }
       sendGame(JSON.stringify({ type: 'video:control', action: 'progress', currentTime: t }));
     }, 2000);
@@ -816,16 +841,31 @@ export default function App() {
     playbackTimeRef.current = t;
   }, []);
 
-  /** 这一部播完了：只有控片人推进，避免多端各发一次导致跳两部 */
+  /** 这一部播完了：只有控片人推进（待机短片则由无控片权的先到者推进，服务端按 expectedItemId 去重） */
   const handleMediaEnded = useCallback(() => {
     const vs = videoStateRef.current;
     if (vs.controllerId && vs.controllerId !== localIdRef.current) return;
-    sendGame(JSON.stringify({ type: 'video:control', action: 'next' }));
+    playbackTimeRef.current = null;
+    sendGame(
+      JSON.stringify({
+        type: 'video:control',
+        action: 'next',
+        expectedItemId: vs.currentItem.id,
+      })
+    );
   }, [sendGame]);
 
   /** 手动跳到下一部 */
   const handleSkipNext = useCallback(() => {
-    sendGame(JSON.stringify({ type: 'video:control', action: 'next' }));
+    const vs = videoStateRef.current;
+    playbackTimeRef.current = null;
+    sendGame(
+      JSON.stringify({
+        type: 'video:control',
+        action: 'next',
+        expectedItemId: vs.currentItem.id,
+      })
+    );
   }, [sendGame]);
 
   const handleVideoControl = (action: 'play' | 'pause' | 'seek', currentTime?: number) => {
@@ -840,16 +880,6 @@ export default function App() {
         type: 'video:control',
         action,
         currentTime,
-      })
-    );
-  };
-
-  const handleSelectVideo = (item: VideoQueueItem) => {
-    sendGame(
-      JSON.stringify({
-        type: 'video:control',
-        action: 'select_item',
-        item,
       })
     );
   };
@@ -1116,6 +1146,7 @@ export default function App() {
             mapTheme={currentMapTheme}
             players={players}
             localPlayerId={localPlayerId}
+            localFallback={{ name: playerName, avatar }}
             furniture={furniture}
             videoState={videoState}
             serverTimeOffsetMs={serverTimeOffsetMs}
@@ -1381,7 +1412,6 @@ export default function App() {
         isOpen={showQueueDrawer}
         videoState={videoState}
         onClose={() => setShowQueueDrawer(false)}
-        onSelectVideo={handleSelectVideo}
         onEnqueueUrl={handleEnqueueUrl}
         onRemoveFromQueue={handleRemoveFromQueue}
       />
