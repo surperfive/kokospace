@@ -52,6 +52,8 @@ export interface RoomVideoItem {
   url: string;
   sourceType: 'builtin' | 'mp4' | 'youtube' | 'bilibili';
   addedBy: string;
+  /** 点播人 playerId：切到这一部时由他接管控片权 */
+  addedById?: string;
   thumbnail?: string;
   durationSec?: number;
   builtinMode?: 'cosmos' | 'lofi' | 'mp4';
@@ -66,6 +68,8 @@ export interface RoomVideoState {
   /** 点播人：只有他能改播放进度（play/pause/seek），其他人只读 */
   controllerId?: string | null;
   controllerName?: string;
+  /** 当前放的是默认待机短片（还没人点播过）：此时点播直接开播 */
+  isPlaceholder?: boolean;
 }
 
 export interface RoomChatMessage {
@@ -248,9 +252,11 @@ export class RoomCore {
       isPlaying: true,
       currentTime: 0,
       updatedAtMs: Date.now(),
-      queue: DEFAULT_PLAYLIST.map((item) => ({ ...item })),
+      // 队列是「真正的播放顺序」，初始为空；内置片库在客户端单独展示
+      queue: [],
       controllerId: null,
       controllerName: '',
+      isPlaceholder: true,
     };
     this.chatHistory = [
       {
@@ -458,6 +464,9 @@ export class RoomCore {
         vs.controllerId = playerId;
         vs.controllerName = me.name;
       };
+      /** 能否推进到下一部：控片人、房主，或当前无人控片 */
+      const canAdvance = () =>
+        !vs.controllerId || vs.controllerId === playerId || this.hostId === playerId;
 
       if (action === 'progress') {
         // 点播人定期上报真实播放位置：服务端校准后广播一次（silent，不弹提示），
@@ -481,9 +490,55 @@ export class RoomCore {
         ];
       }
 
+      /** 加进队列末尾，只给发起人一条私有回执：不广播、不切片 */
+      const pushToQueue = (item: RoomVideoItem): Outbound[] => {
+        const existing = vs.queue.find((q) => q.id === item.id);
+        if (existing) {
+          return [
+            {
+              kind: 'to',
+              targetId: playerId,
+              payload: {
+                type: 'video:queued',
+                item: existing,
+                position: vs.queue.findIndex((q) => q.id === existing.id) + 1,
+                total: vs.queue.length,
+                already: true,
+              },
+            },
+          ];
+        }
+        vs.queue.push(item);
+        return [
+          {
+            kind: 'to',
+            targetId: playerId,
+            payload: {
+              type: 'video:queued',
+              item,
+              position: vs.queue.length,
+              total: vs.queue.length,
+            },
+          },
+        ];
+      };
+
+      /** 立即切到某部，并把自己设为控片人（队列保持播放顺序，重复点播不重复占位） */
+      const startItem = (item: RoomVideoItem) => {
+        vs.queue = vs.queue.filter((q) => q.id !== item.id);
+        vs.queue.push(item);
+        vs.currentItem = item;
+        vs.currentTime = 0;
+        vs.isPlaying = true;
+        vs.updatedAtMs = now;
+        vs.isPlaceholder = false;
+        claimController();
+      };
+
       if (action === 'play') {
         if (!isController) return denyProgress();
-        if (!vs.controllerId) claimController();
+        // 待机短片人人可暂停/继续，不锁控片权
+        if (!vs.controllerId && !vs.isPlaceholder) claimController();
         vs.currentTime = Number.isFinite(Number(msg.currentTime))
           ? Number(msg.currentTime)
           : currentElapsed;
@@ -491,7 +546,7 @@ export class RoomCore {
         vs.updatedAtMs = now;
       } else if (action === 'pause') {
         if (!isController) return denyProgress();
-        if (!vs.controllerId) claimController();
+        if (!vs.controllerId && !vs.isPlaceholder) claimController();
         vs.currentTime = Number.isFinite(Number(msg.currentTime))
           ? Number(msg.currentTime)
           : currentElapsed;
@@ -499,9 +554,40 @@ export class RoomCore {
         vs.updatedAtMs = now;
       } else if (action === 'seek') {
         if (!isController) return denyProgress();
-        if (!vs.controllerId) claimController();
+        if (!vs.controllerId && !vs.isPlaceholder) claimController();
         vs.currentTime = Math.max(0, Number(msg.currentTime) || 0);
         vs.updatedAtMs = now;
+      } else if (action === 'next') {
+        // 播完 / 手动跳过：控片人或房主可推进
+        if (!canAdvance()) return denyProgress();
+        const idx = vs.queue.findIndex((q) => q.id === vs.currentItem.id);
+        const nextItem = idx >= 0 ? vs.queue[idx + 1] : undefined;
+        if (nextItem) {
+          vs.currentItem = { ...nextItem };
+          vs.currentTime = 0;
+          vs.isPlaying = true;
+          vs.updatedAtMs = now;
+          vs.isPlaceholder = false;
+          // 控片权交给这一部的点播人；他不在房间就交房主
+          const ownerId =
+            nextItem.addedById && this.players.has(nextItem.addedById)
+              ? nextItem.addedById
+              : this.hostId && this.players.has(this.hostId)
+                ? this.hostId
+                : playerId;
+          vs.controllerId = ownerId;
+          vs.controllerName = this.players.get(ownerId)?.name || nextItem.addedBy || '';
+        } else {
+          // 队列放完：回到待机短片，清空已播队列，谁都能重新点播
+          vs.queue = [];
+          vs.currentItem = { ...DEFAULT_PLAYLIST[0] };
+          vs.currentTime = 0;
+          vs.isPlaying = true;
+          vs.updatedAtMs = now;
+          vs.isPlaceholder = true;
+          vs.controllerId = null;
+          vs.controllerName = '';
+        }
       } else if (action === 'select_item' && msg.item) {
         const item: RoomVideoItem = {
           id: String(msg.item.id || `vid_${now}`).slice(0, 64),
@@ -511,16 +597,17 @@ export class RoomCore {
             ? msg.item.sourceType
             : 'mp4',
           addedBy: me.name,
+          addedById: playerId,
           durationSec: Number(msg.item.durationSec) || undefined,
           builtinMode: msg.item.builtinMode,
         };
-        vs.currentItem = item;
-        vs.currentTime = 0;
-        vs.isPlaying = true;
-        vs.updatedAtMs = now;
-        // 谁点播谁控片
-        claimController();
-        if (!vs.queue.some((q) => q.id === item.id)) vs.queue.push(item);
+        if (vs.isPlaceholder) {
+          // 房间还停在待机短片：点播直接开播
+          startItem(item);
+        } else {
+          // 有人在看片：只排队，不打断
+          return pushToQueue(item);
+        }
       } else if (action === 'enqueue' && msg.item) {
         const parsed = parseVideoUrlServer(String(msg.item.url || ''));
         const item: RoomVideoItem = {
@@ -529,16 +616,16 @@ export class RoomCore {
           url: parsed.embedUrl,
           sourceType: parsed.sourceType,
           addedBy: me.name,
+          addedById: playerId,
         };
-        vs.queue.push(item);
-        if (msg.playNow) {
-          vs.currentItem = item;
-          vs.currentTime = 0;
-          vs.isPlaying = true;
-          vs.updatedAtMs = now;
-          claimController();
-        }
+        if (vs.isPlaceholder) startItem(item);
+        else return pushToQueue(item);
       } else if (action === 'remove_queue' && typeof msg.itemId === 'string') {
+        const target = vs.queue.find((q) => q.id === msg.itemId);
+        if (!target) return [];
+        // 正在播的不能删；别人的只有房主能删
+        if (target.id === vs.currentItem.id) return [];
+        if (target.addedById !== playerId && this.hostId !== playerId) return [];
         vs.queue = vs.queue.filter((q) => q.id !== msg.itemId);
       } else {
         return [];
@@ -663,7 +750,13 @@ export class RoomCore {
     if (state.mapId) this.mapId = state.mapId;
     if (Array.isArray(state.furniture)) this.furniture = state.furniture.slice(0, 40);
     if (state.videoState && state.videoState.currentItem) {
-      this.videoState = { ...state.videoState, updatedAtMs: Date.now() };
+      const restored = state.videoState;
+      this.videoState = {
+        ...restored,
+        updatedAtMs: Date.now(),
+        // 旧存档没有这个字段：有控片人就说明确实点播过
+        isPlaceholder: restored.isPlaceholder ?? !restored.controllerId,
+      };
     }
     if (Array.isArray(state.chatHistory) && state.chatHistory.length) {
       this.chatHistory = state.chatHistory.slice(-40);

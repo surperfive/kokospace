@@ -16,6 +16,8 @@ import {
   X,
   Users,
   Sparkles,
+  Power,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AvatarConfig,
@@ -130,8 +132,11 @@ export default function App() {
   const [linkMode, setLinkMode] = useState<'off' | 'connecting' | 'direct' | 'cloud'>(() =>
     isP2PEnabled() ? 'connecting' : 'off'
   );
+  // 手动断开：与网络掉线区分开。true 时连接 effect 不重连、不发送任何业务消息。
+  const [manuallyDisconnected, setManuallyDisconnected] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const manuallyDisconnectedRef = useRef<boolean>(false);
   const p2pRef = useRef<P2PRoom | null>(null);
   const p2pEnabledRef = useRef<boolean>(isP2PEnabled());
   const p2pHostRef = useRef<string | null>(null);
@@ -148,10 +153,18 @@ export default function App() {
   localIdRef.current = localPlayerId;
   videoStateRef.current = videoState;
   serverOffsetRef.current = serverTimeOffsetMs;
+  manuallyDisconnectedRef.current = manuallyDisconnected;
 
   const currentMapTheme = useMemo(() => {
     return allMaps.find((m) => m.id === mapId) || allMaps[0] || BUILTIN_MAPS[0];
   }, [allMaps, mapId]);
+
+  /** 队列里当前项之后还有内容 → 显示「下一部」 */
+  const hasNext = useMemo(() => {
+    const q = videoState.queue || [];
+    const idx = q.findIndex((it) => it.id === videoState.currentItem.id);
+    return idx >= 0 && idx < q.length - 1;
+  }, [videoState.queue, videoState.currentItem.id]);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -163,6 +176,7 @@ export default function App() {
   // 业务消息统一出口：P2P 模式下交给房主，否则走云端 WebSocket。
   // 注意语音信令（webrtc:signal）不走这里 —— 它必须走云端的转发通道。
   const sendGame = useCallback((payload: string) => {
+    if (manuallyDisconnectedRef.current) return;
     const p2p = p2pRef.current;
     if (p2p) {
       p2p.send(payload);
@@ -249,7 +263,7 @@ export default function App() {
 
   // WebSocket Connection & Reconnection Loop
   useEffect(() => {
-    if (!hasEnteredRoom) return;
+    if (!hasEnteredRoom || manuallyDisconnected) return;
     let closedByUser = false;
     let reconnectTimer: number | null = null;
     let pingTimer: number | null = null;
@@ -547,6 +561,19 @@ export default function App() {
             showToast(msg.reason || '只有点播人可以改播放进度');
             break;
           }
+          case 'video:queued': {
+            const pos = Number(msg.position) || 0;
+            const total = Number(msg.total) || 0;
+            const title = msg.item?.title || '该视频';
+            if (msg.already) {
+              showToast(`「${title}」已在播放队列第 ${pos} 位`);
+            } else if (total > pos) {
+              showToast(`已加入队列：第 ${pos} 位 / 共 ${total} 部，当前片播完自动播放`);
+            } else {
+              showToast('已加入队列，当前片播完自动播放');
+            }
+            break;
+          }
           case 'video:synced': {
             if (msg.videoState) setVideoState(msg.videoState);
             if (typeof msg.serverTimeMs === 'number') {
@@ -607,14 +634,14 @@ export default function App() {
       p2pRef.current = null;
       wsRef.current?.close();
     };
-  }, [hasEnteredRoom, roomId]);
+  }, [hasEnteredRoom, roomId, manuallyDisconnected]);
 
   // Actions & Handlers
   // 点播人每 2 秒上报一次**真实播放位置**（不是时钟外推值）：
   // 视频缓冲、解码慢、切后台都会让真实位置落后，只有元素自己知道。
   // 上报后服务端广播静默同步，所有人重新对齐。
   useEffect(() => {
-    if (!hasEnteredRoom) return;
+    if (!hasEnteredRoom || manuallyDisconnected) return;
     if (!videoState.controllerId || videoState.controllerId !== localPlayerId) return;
     const timer = window.setInterval(() => {
       const vs = videoStateRef.current;
@@ -632,7 +659,7 @@ export default function App() {
       sendGame(JSON.stringify({ type: 'video:control', action: 'progress', currentTime: t }));
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [hasEnteredRoom, localPlayerId, videoState.controllerId, sendGame]);
+  }, [hasEnteredRoom, manuallyDisconnected, localPlayerId, videoState.controllerId, sendGame]);
 
   const handleSaveAvatarAndEnter = async () => {
     const cleanName = playerName.trim() || '旅人';
@@ -664,6 +691,33 @@ export default function App() {
     setShowAvatarModal(false);
   };
 
+  /** 手动断开整个房间连接 / 重新连接。断开后所有收发都停，再点恢复。 */
+  const handleToggleConnection = () => {
+    if (manuallyDisconnected) {
+      setLinkMode(isP2PEnabled() ? 'connecting' : 'off');
+      setManuallyDisconnected(false);
+      showToast('正在重新连接房间…');
+      return;
+    }
+    if (p2pFallbackRef.current) {
+      window.clearTimeout(p2pFallbackRef.current);
+      p2pFallbackRef.current = null;
+    }
+    // 停麦并关闭所有语音 peer，避免断开后还留着别人的声音
+    for (const p of playersRef.current) {
+      if (p.id !== localIdRef.current) audioMgrRef.current?.removePeer(p.id);
+    }
+    audioMgrRef.current?.disableMic();
+    setIsMicOn(false);
+    setIsBroadcasting(false);
+    setNearbyCount(0);
+    // 清掉远端玩家，画布上只留自己；重连时 room:init 会拉回全量状态
+    setPlayers((prev) => prev.filter((p) => p.id === localIdRef.current));
+    setManuallyDisconnected(true);
+    setLinkMode('off');
+    showToast('已断开房间连接，点「重新连接」恢复');
+  };
+
   const handleMoveLocalPlayer = useCallback(
     (next: {
       x: number;
@@ -687,6 +741,10 @@ export default function App() {
   );
 
   const toggleMic = async () => {
+    if (manuallyDisconnected) {
+      showToast('连接已断开，请先重新连接');
+      return;
+    }
     if (isMicOn) {
       audioMgrRef.current?.disableMic();
       setIsMicOn(false);
@@ -708,6 +766,10 @@ export default function App() {
   };
 
   const toggleBroadcast = async () => {
+    if (manuallyDisconnected) {
+      showToast('连接已断开，请先重新连接');
+      return;
+    }
     const next = !isBroadcasting;
     if (next && !isMicOn) {
       const ok = await audioMgrRef.current?.enableMic();
@@ -754,6 +816,18 @@ export default function App() {
     playbackTimeRef.current = t;
   }, []);
 
+  /** 这一部播完了：只有控片人推进，避免多端各发一次导致跳两部 */
+  const handleMediaEnded = useCallback(() => {
+    const vs = videoStateRef.current;
+    if (vs.controllerId && vs.controllerId !== localIdRef.current) return;
+    sendGame(JSON.stringify({ type: 'video:control', action: 'next' }));
+  }, [sendGame]);
+
+  /** 手动跳到下一部 */
+  const handleSkipNext = useCallback(() => {
+    sendGame(JSON.stringify({ type: 'video:control', action: 'next' }));
+  }, [sendGame]);
+
   const handleVideoControl = (action: 'play' | 'pause' | 'seek', currentTime?: number) => {
     // 进度只由点播人控制；别人点了只给提示，不发消息
     const controllerId = videoState.controllerId;
@@ -780,13 +854,12 @@ export default function App() {
     );
   };
 
-  const handleEnqueueUrl = async (url: string, title: string, playNow: boolean) => {
+  const handleEnqueueUrl = async (url: string, title: string) => {
     sendGame(
       JSON.stringify({
         type: 'video:control',
         action: 'enqueue',
         item: { url, title },
-        playNow,
       })
     );
   };
@@ -924,35 +997,45 @@ export default function App() {
           <span className="hidden sm:inline text-xs text-zinc-600 truncate">
             {currentMapTheme.name} · 房间 {roomId}
           </span>
-          {linkMode !== 'off' && (
+          {manuallyDisconnected ? (
             <span
-              title={
-                linkMode === 'direct'
-                  ? 'P2P 直连房主，消息不经过云端'
-                  : linkMode === 'cloud'
-                    ? '直连失败，正在走云端服务器（延迟较高）'
-                    : '正在与房主建立直连…'
-              }
-              className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                linkMode === 'direct'
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : linkMode === 'cloud'
-                    ? 'bg-amber-50 text-amber-600'
-                    : 'bg-zinc-100 text-zinc-500'
-              }`}
+              title="已手动断开房间连接，点击底部「重新连接」恢复"
+              className="hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium bg-red-50 text-red-600"
             >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  linkMode === 'direct'
-                    ? 'bg-emerald-500'
-                    : linkMode === 'cloud'
-                      ? 'bg-amber-500'
-                      : 'bg-zinc-400'
-                }`}
-              />
-              {linkMode === 'direct' ? '直连' : linkMode === 'cloud' ? '云端' : '连接中'}
-              <span className="opacity-70">· {players.length}人</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              已断开
             </span>
+          ) : (
+            linkMode !== 'off' && (
+              <span
+                title={
+                  linkMode === 'direct'
+                    ? 'P2P 直连房主，消息不经过云端'
+                    : linkMode === 'cloud'
+                      ? '直连失败，正在走云端服务器（延迟较高）'
+                      : '正在与房主建立直连…'
+                }
+                className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  linkMode === 'direct'
+                    ? 'bg-emerald-50 text-emerald-600'
+                    : linkMode === 'cloud'
+                      ? 'bg-amber-50 text-amber-600'
+                      : 'bg-zinc-100 text-zinc-500'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    linkMode === 'direct'
+                      ? 'bg-emerald-500'
+                      : linkMode === 'cloud'
+                        ? 'bg-amber-500'
+                        : 'bg-zinc-400'
+                  }`}
+                />
+                {linkMode === 'direct' ? '直连' : linkMode === 'cloud' ? '云端' : '连接中'}
+                <span className="opacity-70">· {players.length}人</span>
+              </span>
+            )
           )}
         </div>
 
@@ -1049,6 +1132,9 @@ export default function App() {
             onOpenQueue={() => setShowQueueDrawer(true)}
             onVideoControl={handleVideoControl}
             onPlaybackTime={handlePlaybackTime}
+            onMediaEnded={handleMediaEnded}
+            hasNext={hasNext}
+            onSkipNext={handleSkipNext}
             canControlProgress={
               !videoState.controllerId || videoState.controllerId === localPlayerId
             }
@@ -1088,6 +1174,29 @@ export default function App() {
         {/* Bottom Floating Interaction Dock */}
         {hasEnteredRoom && (
           <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 py-2 rounded-2xl bg-white/92 backdrop-blur-md border border-zinc-200 shadow-xl max-w-[96vw]">
+            {/* Disconnect / Reconnect Connection Toggle */}
+            <button
+              type="button"
+              onClick={handleToggleConnection}
+              className={`min-h-[44px] px-3 sm:px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                manuallyDisconnected
+                  ? 'bg-[#10B981] text-white hover:bg-[#0EA371]'
+                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+              }`}
+              title={manuallyDisconnected ? '重新连接房间' : '断开整个房间连接（停止收发同步）'}
+            >
+              {manuallyDisconnected ? (
+                <RefreshCw className="w-4 h-4" />
+              ) : (
+                <Power className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">
+                {manuallyDisconnected ? '重新连接' : '断开连接'}
+              </span>
+            </button>
+
+            <div className="w-px h-6 bg-zinc-200 shrink-0" />
+
             {/* Voice Mic Toggle */}
             <button
               type="button"

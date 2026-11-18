@@ -8,6 +8,7 @@ import {
   Volume2,
   VolumeX,
   Radio,
+  SkipForward,
 } from 'lucide-react';
 import { StageWidgetPlugin, VideoState } from '../types/metaverse';
 
@@ -27,6 +28,11 @@ interface CentralCinemaScreenProps {
   canControlProgress?: boolean;
   /** 上报 mp4 的真实播放位置（点播人用它当权威时间源） */
   onPlaybackTime?: (time: number) => void;
+  /** 当前这一部播完了（mp4 ended / 内置短片跑完一轮） */
+  onMediaEnded?: () => void;
+  /** 队列里当前项之后还有内容 */
+  hasNext?: boolean;
+  onSkipNext?: () => void;
   activeWidgets: StageWidgetPlugin[];
 }
 
@@ -44,6 +50,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onVideoControl,
   canControlProgress = true,
   onPlaybackTime,
+  onMediaEnded,
+  hasNext = false,
+  onSkipNext,
   activeWidgets,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -61,6 +70,11 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   // 回调放进 ref，避免父组件每次渲染都重建事件监听
   const onPlaybackTimeRef = useRef(onPlaybackTime);
   onPlaybackTimeRef.current = onPlaybackTime;
+  const onMediaEndedRef = useRef(onMediaEnded);
+  onMediaEndedRef.current = onMediaEnded;
+  /** 内置短片是循环动画，用"时间回绕"判断跑完一轮 */
+  const prevBuiltinTimeRef = useRef<number | null>(null);
+  const builtinItemRef = useRef<string>('');
 
   const getExpectedTime = () => {
     if (!videoState.isPlaying) return videoState.currentTime;
@@ -187,6 +201,20 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
           drawBuiltinVectorFilm(ctx, canvas.width, canvas.height, serverTime, item.builtinMode || 'cosmos');
         }
       }
+
+      // 内置短片循环播放，跑到片尾就当作"这一部播完"，让队列继续往下走
+      if (item.sourceType === 'builtin' && canControlProgress) {
+        if (builtinItemRef.current !== item.id) {
+          builtinItemRef.current = item.id;
+          prevBuiltinTimeRef.current = null;
+        }
+        const dur = item.durationSec || 180;
+        const prev = prevBuiltinTimeRef.current;
+        if (prev != null && dur > 5 && prev > dur - 2 && serverTime < 2) {
+          onMediaEndedRef.current?.();
+        }
+        prevBuiltinTimeRef.current = serverTime;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -305,6 +333,19 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               <ListVideo className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">点播单</span>
             </button>
+            {hasNext && (
+              <button
+                type="button"
+                onClick={() => canControlProgress && onSkipNext?.()}
+                disabled={!canControlProgress}
+                className={`p-1 rounded-md bg-white/10 text-white transition-colors ${
+                  canControlProgress ? 'hover:bg-white/20 cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                }`}
+                title={canControlProgress ? '跳到下一部' : `由「${videoState.controllerName || '点播人'}」控片`}
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={onToggleTheaterFocus}
@@ -336,6 +377,10 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               onLoadedMetadata={(e) => {
                 const d = e.currentTarget.duration;
                 if (Number.isFinite(d) && d > 0) setMediaDuration(d);
+              }}
+              onEnded={() => {
+                // 只有点播人是权威，其他人的 ended 时序不可靠
+                if (canControlProgress) onMediaEndedRef.current?.();
               }}
               className="w-full h-full object-contain bg-black"
             />

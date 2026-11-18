@@ -103,6 +103,8 @@ export interface VideoQueueItem {
   url: string;
   sourceType: VideoSourceType;
   addedBy: string;
+  /** 点播人 playerId：切到这一部时由他接管控片权 */
+  addedById?: string;
   thumbnail?: string;
   durationSec?: number;
   builtinMode?: 'cosmos' | 'lofi' | 'mp4';
@@ -117,6 +119,8 @@ export interface VideoState {
   /** 点播人：只有他能改播放进度（play/pause/seek），其余人只看 */
   controllerId?: string | null;
   controllerName?: string;
+  /** 当前放的是默认待机短片（还没人点播过）：此时点播会直接开播，不用排队 */
+  isPlaceholder?: boolean;
 }
 
 export interface FloatingReaction {

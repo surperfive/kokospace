@@ -8,7 +8,7 @@ interface VideoQueueDrawerProps {
   videoState: VideoState;
   onClose: () => void;
   onSelectVideo: (item: VideoQueueItem) => void;
-  onEnqueueUrl: (url: string, title: string, playNow: boolean) => Promise<void>;
+  onEnqueueUrl: (url: string, title: string) => Promise<void>;
   onRemoveFromQueue: (itemId: string) => void;
 }
 
@@ -26,11 +26,11 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const handleAdd = async (playNow: boolean) => {
+  const handleAdd = async () => {
     if (!urlInput.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await onEnqueueUrl(urlInput.trim(), titleInput.trim(), playNow);
+      await onEnqueueUrl(urlInput.trim(), titleInput.trim());
       setUrlInput('');
       setTitleInput('');
     } finally {
@@ -45,7 +45,11 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
         <div className="px-5 py-4 border-b border-zinc-200 flex items-center justify-between">
           <div>
             <h3 className="font-display font-bold text-base text-zinc-900">中央巨幕点播中心</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">支持内置短片、MP4 直链、YouTube 与 Bilibili 链接</p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {videoState.isPlaceholder
+                ? '房间还没人在看片，点播会直接开播'
+                : '点播只入队，当前片播完自动播放，不会打断别人'}
+            </p>
           </div>
           <button
             type="button"
@@ -83,69 +87,64 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
               <button
                 type="button"
                 disabled={!urlInput.trim() || submitting}
-                onClick={() => handleAdd(true)}
+                onClick={handleAdd}
                 className="flex-1 py-2 px-3 rounded-xl bg-[#FF5A36] hover:bg-[#E84B28] text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                <Play className="w-3.5 h-3.5" />
-                立即同步播放
-              </button>
-              <button
-                type="button"
-                disabled={!urlInput.trim() || submitting}
-                onClick={() => handleAdd(false)}
-                className="py-2 px-3 rounded-xl bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 text-xs font-medium flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                加入队列
+                {videoState.isPlaceholder ? (
+                  <>
+                    <Play className="w-3.5 h-3.5" />
+                    立即同步播放
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    加入播放队列
+                  </>
+                )}
               </button>
             </div>
           </section>
 
           {/* Current Room Queue */}
           <section className="space-y-2.5">
-            <h4 className="text-xs font-semibold text-zinc-700">当前房间播放队列 ({videoState.queue.length})</h4>
+            <h4 className="text-xs font-semibold text-zinc-700">播放队列 ({videoState.queue.length})</h4>
             <div className="space-y-2">
-              {videoState.queue.map((item) => {
+              {videoState.queue.length === 0 && (
+                <p className="text-[11px] text-zinc-400 px-1">队列为空，现在点播会立即开播</p>
+              )}
+              {videoState.queue.map((item, index) => {
                 const isActive = videoState.currentItem.id === item.id;
                 return (
                   <div
                     key={item.id}
                     className={`flex items-center justify-between gap-3 p-3 rounded-2xl border transition-colors ${
-                      isActive ? 'bg-[#FF5A36]/8 border-[#FF5A36]/40' : 'bg-white border-zinc-200 hover:bg-zinc-50'
+                      isActive ? 'bg-[#FF5A36]/8 border-[#FF5A36]/40' : 'bg-white border-zinc-200'
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onSelectVideo(item)}
-                      className="flex-1 text-left min-w-0 cursor-pointer"
-                    >
-                      <div className="text-xs font-semibold text-zinc-900 truncate">{item.title}</div>
-                      <div className="text-[11px] text-zinc-500 mt-0.5 truncate">
-                        {item.sourceType.toUpperCase()} · 点播: {item.addedBy}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {isActive && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded bg-[#FF5A36] text-white text-[10px] font-semibold">
+                            正在播放
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold text-zinc-900 truncate">{item.title}</span>
                       </div>
-                    </button>
-                    <div className="flex items-center gap-1 shrink-0">
+                      <div className="text-[11px] text-zinc-500 mt-0.5 truncate">
+                        {isActive ? '当前播放' : `排队第 ${index + 1} 位`} · {item.sourceType.toUpperCase()} · 点播:{' '}
+                        {item.addedBy}
+                      </div>
+                    </div>
+                    {!isActive && (
                       <button
                         type="button"
-                        onClick={() => onSelectVideo(item)}
-                        className={`p-2 rounded-lg text-xs cursor-pointer ${
-                          isActive ? 'bg-[#FF5A36] text-white' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
-                        }`}
-                        title="播放此视频"
+                        onClick={() => onRemoveFromQueue(item.id)}
+                        className="p-2 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
+                        title="移出队列"
                       >
-                        <Play className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                      {!isActive && (
-                        <button
-                          type="button"
-                          onClick={() => onRemoveFromQueue(item.id)}
-                          className="p-2 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                          title="移出队列"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+                    )}
                   </div>
                 );
               })}
@@ -155,6 +154,7 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
           {/* Built-in Curated Library */}
           <section className="space-y-2.5">
             <h4 className="text-xs font-semibold text-zinc-700">内置精选片库</h4>
+            <p className="text-[11px] text-zinc-500 -mt-1">点击即点播，排队规则同上</p>
             <div className="grid grid-cols-1 gap-2.5">
               {BUILTIN_VIDEOS.map((vid) => (
                 <button

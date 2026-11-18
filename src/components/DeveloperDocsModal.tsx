@@ -151,9 +151,10 @@ export const DeveloperDocsModal: React.FC<DeveloperDocsModalProps> = ({
                 <ul className="list-disc pl-5 space-y-1 text-zinc-600 font-mono">
                   <li>room:join / room:init — 房间状态初始化与服务端时间戳对齐</li>
                   <li>player:move / player:moved — 60ms 节流同步坐标、朝向与坐姿</li>
-                  <li>video:control / video:synced — 播放、暂停、Seek 与点播队列同步</li>
+                  <li>video:control / video:synced — 点播、play/pause/seek、next 切下一部</li>
+                  <li>video:queued — 点播只入队时给发起人的回执（含排队位次，不换片）</li>
                   <li>video:rejected — 非点播人修改播放进度时被拒绝（控片权在点播人手上）</li>
-                  <li>video:control(action=progress) — 点播人每 3 秒上报真实进度，供新人对齐（不广播）</li>
+                  <li>video:control(action=progress) — 点播人每 2 秒上报真实播放位置，静默广播给全房间对齐</li>
                   <li>webrtc:signal — 点对点空间语音 SDP/ICE 信令透传</li>
                   <li>scene:update / scene:updated — 地图切换与可交互家具实时同步</li>
                 </ul>
