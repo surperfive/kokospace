@@ -74,8 +74,7 @@ export const SKIP_VOTE_THRESHOLD = 2;
  * 留这点余量是给客户端自己的「播完」判定抢先用的：正常情况客户端先报，
  * 这里只在客户端彻底没反应（切后台、断网、页面崩了）时兜底。
  */
-const AUTO_ADVANCE_GRACE_SEC = 3;
-
+export const AUTO_ADVANCE_GRACE_SEC = 3;
 /**
  * 搬运（扛人 / 扛巨幕）的参数。
  *
