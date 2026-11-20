@@ -117,8 +117,26 @@ Dashboard → Workers & Pages → `kokospace` → **Settings → Builds → Conn
 → Secret 名字拼错（必须是 `CLOUDFLARE_API_TOKEN`），或 token 没给 Workers 权限（用「Edit Cloudflare Workers」模板）。
 
 **`Install dependencies` 和 `Build frontend` 都绿，只有 `Deploy worker + assets` 红**
-→ 基本就是 Secret 没配或名字不对。那一步 3 秒内就失败（正常部署要 20 秒以上），说明是认证问题不是网络问题。
-现在工作流前面加了 `Check Cloudflare secrets` 步骤，缺 Secret 会直接告诉你缺哪个、去哪儿加。
+→ 历史上这一步失败过三次（11-18 两次、11-20 一次），根因是 **API Token 失效**，不是代码问题。
+现在工作流在部署前加了 `Verify Cloudflare token`，会直接调 `/user/tokens/verify` 和
+`/accounts/{id}` 验一遍，报错信息里写清了该怎么办。
+
+如果它报 `CLOUDFLARE_API_TOKEN 无效`：
+1. 打开 <https://dash.cloudflare.com/profile/api-tokens>
+2. **Create Token** → 选模板 **Edit Cloudflare Workers** → Continue → Create
+3. 复制生成的 token（只显示一次）
+4. 仓库 **Settings → Secrets and variables → Actions** → 点 `CLOUDFLARE_API_TOKEN` → **Update** → 粘贴新值
+5. **Actions** → 选 `Deploy to Cloudflare Workers` → **Re-run all jobs**
+
+如果它报 `CLOUDFLARE_ACCOUNT_ID 不对`，说明 token 有效但读不到那个账号，
+把 Secret 里的值换成 Dashboard 右侧栏的 Account ID（32 位十六进制）。
+
+顺带一提：`Check Cloudflare secrets` 只检查「有没有值」，不检查「值能不能用」，
+所以 Secret 存在但过期时那一步仍然是绿的 —— 真正拦住它的是 `Verify Cloudflare token`。
+
+**CI 红了会不会影响线上**
+→ 不会。线上是上一次成功部署的版本，照常访问。CI 只是「以后每次 push 自动上线」这条通道，
+修好 token 之前，本地 `npx wrangler deploy` 依然可以正常发布。
 
 **在 Cloudflare 控制台误开了 Pages 项目**
 → Pages 只能放静态文件，这个项目进房间要靠 Durable Object + WebSocket，Pages 上跑不了。
