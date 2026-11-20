@@ -703,7 +703,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
       // 整段跳过，房间永远停在最后一帧。暂停时多等 3 秒，给「想重看」的人留余地。
       const biliAtTail = activeDur > 5 && t >= activeDur - 0.5;
       const biliHoldOk =
-        videoState.isPlaying || Date.now() - videoState.updatedAtMs > 3000;
+        videoState.isPlaying ||
+        Date.now() + serverTimeOffsetMs - videoState.updatedAtMs > 3000;
       if (isBilibili && !isLiveStream && biliAtTail && biliHoldOk) {
         const endKey = `${item.id}:${videoState.updatedAtMs}`;
         const nowMs = Date.now();
@@ -1618,11 +1619,14 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             />
             <span
               className="font-mono tabular-nums text-[10px] text-zinc-300 shrink-0"
-              title={
+              title={[
                 item.durationSec && item.durationSec > 0
-                  ? undefined
-                  : '没拿到这部片的时长：播完不会自动跳下一部，请手动点「跳过」'
-              }
+                  ? `时长 ${formatSec(item.durationSec)}`
+                  : '时长未知：播完不会自动跳，请手动点「跳过」',
+                `房间时钟 ${formatSec(displayTime)}`,
+                videoState.isPlaying ? '播放中' : '已暂停',
+                endedSentKeyRef.current ? '已上报片尾' : '未上报片尾',
+              ].join(' · ')}
             >
               {formatSec(biliDraft ?? displayTime)} /{' '}
               {item.durationSec && item.durationSec > 0 ? formatSec(item.durationSec) : '--:--'}
