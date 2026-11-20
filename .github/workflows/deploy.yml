@@ -53,14 +53,36 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # 光「非空」不代表可用：token 过期、被删、权限模板不对，都会在部署那一步
+      # 才炸，日志还藏在 action 内部。这里直接用 Cloudflare API 验一遍。
+      - name: Verify Cloudflare token
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          verify=$(curl -s -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer $CF_TOKEN")
+          echo "verify: $verify"
+          if ! echo "$verify" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('success') else 1)"; then
+            echo "::error title=CLOUDFLARE_API_TOKEN 无效::token 校验未通过（已过期或被吊销）。请到 Cloudflare 后台 My Profile → API Tokens 重新生成，模板选 Edit Cloudflare Workers，然后更新仓库 Secret"
+            exit 1
+          fi
+
+          account=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT" \
+            -H "Authorization: Bearer $CF_TOKEN")
+          if ! echo "$account" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('success') else 1)"; then
+            echo "::error title=CLOUDFLARE_ACCOUNT_ID 不对::该 token 读不到账号 $CF_ACCOUNT，请核对仓库 Secret 里的 Account ID"
+            exit 1
+          fi
+          echo "token 与 account id 均有效"
+
+      # 直接调项目自己装的 wrangler，不经过 wrangler-action：
+      # 版本与本地一致，出错时日志就是 wrangler 的原始输出，不用再猜。
       - name: Deploy worker + assets
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
-          # 只部署已经构建好的 dist，避免 action 里重复 build
-          quiet: false
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
 
       - name: Summary
         run: |
