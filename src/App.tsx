@@ -18,6 +18,7 @@ import {
   Power,
   RefreshCw,
   Loader2,
+  PictureInPicture2,
 } from 'lucide-react';
 import {
   AvatarConfig,
@@ -780,6 +781,26 @@ export default function App() {
           );
           return;
         }
+      } else if (vs.currentItem.sourceType === 'bilibili') {
+        // B 站 iframe 读不到进度，本来就不该上报 progress —— 那会把 updatedAtMs
+        // 一直刷新，反过来把服务端看门狗饿死。只在片尾时上报「播完了」。
+        //
+        // 放在这个 setInterval 里而不是只靠 rAF：标签页切后台时 rAF 会整个暂停，
+        // setInterval 只是被节流（约每分钟一次），还能兜住最后一次。
+        const nowServer = Date.now() + serverOffsetRef.current;
+        const elapsed = vs.isPlaying ? Math.max(0, (nowServer - vs.updatedAtMs) / 1000) : 0;
+        const t = vs.currentTime + elapsed;
+        const dur = vs.currentItem.durationSec;
+        if (vs.isPlaying && dur && dur > 5 && t >= dur) {
+          sendGame(
+            JSON.stringify({
+              type: 'video:control',
+              action: 'ended',
+              expectedItemId: vs.currentItem.id,
+            })
+          );
+        }
+        return;
       } else {
         return;
       }
@@ -852,7 +873,7 @@ export default function App() {
 
   // 小窗刚打开时给一句提示：顶栏可拖动、✕ 收回
   useEffect(() => {
-    if (isMiniPlayer) showToast('已缩成小窗 · 拖动顶栏可移动，点 ✕ 收回');
+    if (isMiniPlayer) showToast('已打开小窗 · 拖动顶栏可移动，点 ✕ 关闭（大屏照常在房间里播）');
   }, [isMiniPlayer, showToast]);
 
   /**
@@ -1006,15 +1027,14 @@ export default function App() {
     playbackTimeRef.current = t;
   }, []);
 
-  /** 这一部播完了：只有控片人推进（待机短片则由无控片权的先到者推进，服务端按 expectedItemId 去重） */
+  /** 这一部播完了：谁看到都能上报，服务端校验「已经播到接近片尾」后推进 */
   const handleMediaEnded = useCallback(() => {
     const vs = videoStateRef.current;
-    if (vs.controllerId && vs.controllerId !== localIdRef.current) return;
     playbackTimeRef.current = null;
     sendGame(
       JSON.stringify({
         type: 'video:control',
-        action: 'next',
+        action: 'ended',
         expectedItemId: vs.currentItem.id,
       })
     );
@@ -1532,7 +1552,7 @@ export default function App() {
 
         {/* Bottom Floating Interaction Dock */}
         {hasEnteredRoom && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 py-2 rounded-2xl bg-white/92 backdrop-blur-md border border-zinc-200 shadow-xl max-w-[96vw]">
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 py-2 rounded-2xl bg-white/92 backdrop-blur-md border border-zinc-200 shadow-xl max-w-[96vw] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {/* Disconnect / Reconnect Connection Toggle */}
             <button
               type="button"
@@ -1628,6 +1648,19 @@ export default function App() {
             >
               <MessageCircle className="w-4 h-4" />
               <span className="hidden sm:inline">聊天</span>
+            </button>
+
+            {/* Mini Player Toggle（小窗：边逛边看，大屏不受影响） */}
+            <button
+              type="button"
+              onClick={handleToggleMini}
+              className={`min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                isMiniPlayer ? 'bg-zinc-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
+              }`}
+              title={isMiniPlayer ? '关闭小窗' : '小窗播放：边逛边看'}
+            >
+              <PictureInPicture2 className="w-4 h-4" />
+              <span className="hidden sm:inline">小窗</span>
             </button>
 
             {/* Mobile/Tablet Quick Feature Buttons (hidden on lg where top nav handles them) */}

@@ -262,7 +262,10 @@ export function computeAuthoritativeVideoTime(vs: RoomVideoState): number {
   const elapsed = (Date.now() - vs.updatedAtMs) / 1000;
   const next = vs.currentTime + Math.max(0, elapsed);
   const dur = vs.currentItem.durationSec;
-  if (dur && dur > 0 && next >= dur) return next % dur;
+  // 只有内置待机短片需要取模（它要无限循环）。
+  // 点播的 B 站 / mp4 一旦到片尾就必须停在 dur，否则 `t >= dur` 永远不成立，
+  // 所有「播完了吗」的判断（客户端推进、服务端 ended 校验）全部失效。
+  if (vs.isPlaceholder && dur && dur > 0 && next >= dur) return next % dur;
   return next;
 }
 
@@ -714,6 +717,22 @@ export class RoomCore {
         if (!vs.controllerId && !vs.isPlaceholder) claimController();
         vs.currentTime = Math.max(0, Number(msg.currentTime) || 0);
         vs.updatedAtMs = now;
+      } else if (action === 'ended') {
+        // 「我这边播完了」——谁都能报，但必须真的到片尾才认。
+        //
+        // 为什么不能只让控片人报：控片人切到后台时 requestAnimationFrame 会被
+        // 浏览器整个暂停，他本人也可能已经退出房间。这两种情况下原来的
+        // `next` 永远不会被发出，整屋人卡在片尾，B 站会顺势掉进它自己的推荐页。
+        if (typeof msg.expectedItemId === 'string' && msg.expectedItemId !== vs.currentItem.id) {
+          return [];
+        }
+        const endDur = vs.currentItem.durationSec;
+        if (!endDur || endDur <= 5) return [];
+        // 只认「已经播到接近片尾」的上报，避免有人刚开播就把整屋人跳过。
+        // 用 90% 而不是「差 2 秒」：各端时钟有偏差，卡太死会让人感觉「偶尔不灵」，
+        // 而 221 秒的片子留 22 秒余量已经足够防滥用。
+        if (currentElapsed < endDur * 0.9) return [];
+        this.advanceToNextItem(playerId, now);
       } else if (action === 'next') {
         // 播完 / 手动跳过：控片人或房主可推进，不需要投票
         if (!canAdvance()) return denyProgress();
@@ -924,7 +943,13 @@ export class RoomCore {
     // 注意不能用 computeAuthoritativeVideoTime：内置短片在那里按 dur 取模，
     // 永远不会 >= dur，看门狗就永远触发不了。
     const elapsed = vs.currentTime + Math.max(0, (now - vs.updatedAtMs) / 1000);
-    if (elapsed < dur + AUTO_ADVANCE_GRACE_SEC) return [];
+    // 两个条件任一满足就推进：
+    //   1) 按房间时钟已经播过片尾 + 3 秒宽限（正常情况下走这条）
+    //   2) 上报的进度本身已经贴在片尾
+    // 第 2 条是给「控片人一直在前台、每 2 秒上报一次 progress」兜底的：
+    // 每次上报都会刷新 updatedAtMs，elapsed 被永远钉在 dur 上，只看第 1 条会饿死。
+    const stuckAtEnd = dur > 0 && vs.currentTime >= dur - 0.5;
+    if (elapsed < dur + AUTO_ADVANCE_GRACE_SEC && !stuckAtEnd) return [];
 
     this.advanceToNextItem('', now);
     return [

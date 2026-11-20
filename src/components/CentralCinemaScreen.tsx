@@ -16,7 +16,6 @@ import {
   Loader2,
   AlertTriangle,
   RotateCcw,
-  PictureInPicture2,
   X,
   MessageCircle,
 } from 'lucide-react';
@@ -35,6 +34,8 @@ interface CentralCinemaScreenProps {
   /** 小窗模式：巨幕缩成可拖动的浮窗，走动时也能看。与影院聚焦互斥 */
   isMini?: boolean;
   onToggleMini?: () => void;
+  /** 小窗镜像：静音起播，且不上报播放进度 / 不处理播完事件（避免和大屏重复触发） */
+  silent?: boolean;
   /** 小窗里飘过的聊天气泡（新消息短暂出现后消散） */
   miniChat?: { id: string; name: string; text: string }[];
   /** 小窗左下角「发言」：打开聊天面板 */
@@ -76,6 +77,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onToggleTheaterFocus,
   isMini = false,
   onToggleMini,
+  /** 小窗镜像：静音起播、不参与控片与进度上报 */
+  silent = false,
   miniChat = [],
   onOpenChat,
   onOpenQueue,
@@ -99,7 +102,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   const builtinCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
 
-  const [muted, setMuted] = useState(false);
+  /** 小窗镜像永远静音起播：声音由房间里的大屏负责，两个播放器同时出声会有回声 */
+  const [muted, setMuted] = useState(silent);
   /**
    * 浏览器自动播放策略会拦「带声音的自动播放」。中途进房/新点播时我们会降级成静音起播，
    * 画面照常走但不该让用户以为坏了 —— 用它驱动一个「点一下开声音」的浮层。
@@ -152,6 +156,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   const prevBuiltinTimeRef = useRef<number | null>(null);
   const builtinItemRef = useRef<string>('');
   const endedSentKeyRef = useRef<string | null>(null);
+  /** 上次上报「播完了」的时间：服务端没认（各端时钟偏差）时用来重试 */
+  const lastEndedSentAtRef = useRef(0);
 
   /** YouTube IFrame postMessage 状态跟踪 */
   const ytTimeRef = useRef<number | null>(null);
@@ -529,7 +535,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               onVideoControl(nextAction, ytTimeRef.current ?? getExpectedTime());
             }
           }
-          if (info.playerState === 0 && canControlProgress) {
+          // YouTube 的 ENDED 状态同样不限定控片人：谁看到都能报，服务端校验
+          if (info.playerState === 0) {
             const endKey = `${item.id}:${videoState.updatedAtMs}`;
             if (endedSentKeyRef.current !== endKey) {
               endedSentKeyRef.current = endKey;
@@ -685,17 +692,24 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
 
       // B 站播放器没有 ended 事件：用房间时钟 + 已知时长判断播完，自动推进下一部。
       // 时长来自 /api/parse-video 或浏览器 JSONP；拿不到时长就退化成「播完停住」。
+      //
+      // 这里**不限定控片人**：控片人切后台时 rAF 会被浏览器暂停，他本人也可能已经
+      // 退出房间，只让他一个人上报会让整屋人永远停在片尾。现在任何人在前台看着
+      // 都能上报，服务端按「已播到 90%」校验 + expectedItemId 去重。
+      // 4 秒节流是为了服务端拒绝时（时钟偏差）还能重试，而不是发一次就死心。
       if (
         isBilibili &&
         !isLiveStream &&
-        canControlProgress &&
         videoState.isPlaying &&
         activeDur > 5 &&
         t >= activeDur
       ) {
         const endKey = `${item.id}:${videoState.updatedAtMs}`;
-        if (endedSentKeyRef.current !== endKey) {
+        const nowMs = Date.now();
+        const retryDue = nowMs - lastEndedSentAtRef.current > 4000;
+        if (endedSentKeyRef.current !== endKey || retryDue) {
           endedSentKeyRef.current = endKey;
+          lastEndedSentAtRef.current = nowMs;
           onMediaEndedRef.current?.();
         }
       }
@@ -883,6 +897,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
         u.searchParams.set('enablejsapi', '1');
         u.searchParams.set('origin', window.location.origin);
         u.searchParams.set('autoplay', videoState.isPlaying ? '1' : '0');
+        // 小窗镜像必须静音起播，不然和大屏的 YouTube 一起出声
+        if (silent) u.searchParams.set('mute', '1');
         if (start >= 3) u.searchParams.set('start', String(start));
       } else {
         // B 站播放器是黑盒：只能通过 URL 的 t 参数决定起播点
@@ -1070,29 +1086,18 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                 </button>
               </>
             ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onToggleMini?.()}
-                  className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                  title="缩成小窗，边逛边看"
-                >
-                  <PictureInPicture2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">小窗</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onToggleTheaterFocus}
-                  className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                  title={isTheaterFocused ? '返回 2D 空间视图' : '影院放大聚焦'}
-                >
-                  {isTheaterFocused ? (
-                    <Minimize2 className="w-3.5 h-3.5" />
-                  ) : (
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={onToggleTheaterFocus}
+                className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                title={isTheaterFocused ? '返回 2D 空间视图' : '影院放大聚焦'}
+              >
+                {isTheaterFocused ? (
+                  <Minimize2 className="w-3.5 h-3.5" />
+                ) : (
+                  <Maximize2 className="w-3.5 h-3.5" />
+                )}
+              </button>
             )}
           </div>
         </div>
@@ -1187,7 +1192,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                 }
               }}
               onEnded={() => {
-                if (!canControlProgress || isLiveStream) return;
+                // 不限定控片人：浏览器保证这个事件只在真正播完时触发，
+                // 控片人切后台/退房时别人也能把片子推走
+                if (isLiveStream) return;
                 const endKey = `${item.id}:${videoState.updatedAtMs}`;
                 if (endedSentKeyRef.current === endKey) return;
                 endedSentKeyRef.current = endKey;
@@ -1197,7 +1204,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             />
           )}
 
-          {(isYouTube || item.sourceType === 'bilibili') && (
+          {(isYouTube || item.sourceType === 'bilibili') && !(silent && item.sourceType === 'bilibili') && (
             <iframe
               key={`${item.id}-${iframeSrc}-${retryNonce}`}
               ref={isYouTube ? iframeRef : undefined}
@@ -1215,8 +1222,32 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             />
           )}
 
+          {/*
+           * B 站播放器是黑盒，没法静音也没法被脚本控制：两个 iframe 同时播会双重出声。
+           * 所以小窗里对 B 站只放封面，声音和画面都留在房间的大屏上。
+           */}
+          {silent && item.sourceType === 'bilibili' && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-zinc-950 text-center px-3">
+              {item.thumbnail && (
+                <img
+                  src={item.thumbnail}
+                  alt={item.title}
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover opacity-25"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              )}
+              <div className="relative text-[11px] font-medium text-white/90">B 站视频在小窗不可用</div>
+              <div className="relative text-[10px] leading-tight text-white/60">
+                播放器无法静音，两个窗口会双重出声
+              </div>
+            </div>
+          )}
+
           {/* 自动播放被浏览器拦下后已静音起播：给一个一次点击就能开声音的入口 */}
-          {(isVideoStream || isYouTube) && autoplayMuted && !mediaError && !localStuck && (
+          {(isVideoStream || isYouTube) && autoplayMuted && !silent && !mediaError && !localStuck && (
             <button
               type="button"
               onClick={handleUnmuteClick}
@@ -1238,8 +1269,38 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             </div>
           )}
 
-          {/* Broken-link / Error Recovery Overlay */}
-          {mediaError && (
+          {/* Broken-link / Error Recovery Overlay（小窗里只留一行 + 图标按钮，塞不下文案） */}
+          {mediaError && isMini && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-zinc-950/92 text-white text-center px-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <div className="text-[10px] font-medium">无法播放当前影片</div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMediaError(null);
+                    setRetryNonce((n) => n + 1);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-white/15 hover:bg-white/25 text-[10px] flex items-center gap-1 cursor-pointer"
+                  title="重试加载"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  重试
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (canSkip ? onSkipNext?.() : onVoteSkip?.())}
+                  className="px-1.5 py-0.5 rounded bg-[#FF5A36] text-white text-[10px] flex items-center gap-1 cursor-pointer"
+                  title={canSkip ? '跳过此片' : `投票跳过 ${skipVoteCount}/${skipVoteThreshold}`}
+                >
+                  <SkipForward className="w-3 h-3" />
+                  {canSkip ? '跳过' : `投票 ${skipVoteCount}/${skipVoteThreshold}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mediaError && !isMini && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-4 bg-zinc-950/90 text-white text-center">
               <AlertTriangle className="w-7 h-7 text-amber-400" />
               <div className="space-y-1 max-w-xs">
@@ -1327,8 +1388,12 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                 canControlProgress ? 'hover:bg-black/45 cursor-pointer' : 'cursor-not-allowed'
               }`}
             >
-              <div className="w-14 h-14 rounded-full bg-white/95 text-zinc-900 flex items-center justify-center shadow-lg">
-                <Play className="w-6 h-6 ml-0.5 fill-current" />
+              <div
+                className={`${
+                  isMini ? 'w-9 h-9' : 'w-14 h-14'
+                } rounded-full bg-white/95 text-zinc-900 flex items-center justify-center shadow-lg`}
+              >
+                <Play className={`${isMini ? 'w-4 h-4' : 'w-6 h-6'} ml-0.5 fill-current`} />
               </div>
             </button>
           )}

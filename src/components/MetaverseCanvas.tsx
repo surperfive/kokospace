@@ -875,7 +875,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         }`}
       />
 
-      {/* World-Synchronized Giant Central Cinema Screen */}
+      {/* World-Synchronized Giant Central Cinema Screen（房间里的大屏，开小窗也一直在） */}
       <CentralCinemaScreen
         videoState={videoState}
         serverTimeOffsetMs={serverTimeOffsetMs}
@@ -885,10 +885,6 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         accentColor={mapTheme.palette.accent}
         frameColor={mapTheme.palette.screenFrame}
         isTheaterFocused={isTheaterFocused}
-        isMini={isMini}
-        onToggleMini={onToggleMini}
-        miniChat={miniChat}
-        onOpenChat={onOpenChat}
         onToggleTheaterFocus={onToggleTheaterFocus}
         onOpenQueue={onOpenQueue}
         onVideoControl={onVideoControl}
@@ -906,6 +902,42 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         autoSkipOutroSec={autoSkipOutroSec}
         activeWidgets={activeWidgets}
       />
+
+      {/*
+       * 小窗：和大屏是两个独立实例（同一个节点不可能同时在两个位置）。
+       * 小窗静音、不上报播放进度、不处理播完事件，权威时间仍然只由大屏那个负责。
+       */}
+      {isMini && (
+        <CentralCinemaScreen
+          videoState={videoState}
+          serverTimeOffsetMs={serverTimeOffsetMs}
+          screenWorldRect={screenLayout}
+          camera={{ x: camera.x, y: camera.y, zoom }}
+          viewport={viewport}
+          accentColor={mapTheme.palette.accent}
+          frameColor={mapTheme.palette.screenFrame}
+          isTheaterFocused={false}
+          isMini
+          silent
+          onToggleMini={onToggleMini}
+          onToggleTheaterFocus={onToggleTheaterFocus}
+          miniChat={miniChat}
+          onOpenChat={onOpenChat}
+          onOpenQueue={onOpenQueue}
+          onVideoControl={onVideoControl}
+          hasNext={hasNext}
+          onSkipNext={onSkipNext}
+          canControlProgress={canControlProgress}
+          canSkip={canSkip}
+          skipVoteCount={skipVoteCount}
+          skipVoteThreshold={skipVoteThreshold}
+          hasVotedSkip={hasVotedSkip}
+          onVoteSkip={onVoteSkip}
+          skipStepSec={skipStepSec}
+          autoSkipOutroSec={autoSkipOutroSec}
+          activeWidgets={[]}
+        />
+      )}
 
       {/* Floating Emoji Reactions Overlay */}
       <div className="pointer-events-none fixed inset-0 z-20 overflow-hidden">
