@@ -12,6 +12,7 @@
  */
 
 import { RoomCore, type Outbound } from './roomCore';
+import { buildRtcConfig } from './rtcConfig';
 
 export type P2PRole = 'host' | 'guest';
 export type P2PStatus = 'connecting' | 'connected' | 'failed';
@@ -28,26 +29,26 @@ export interface P2PRoomOptions {
   /** 收到业务消息（等效于原来 ws.onmessage 的 event.data 解析结果） */
   onMessage: (payload: any) => void;
   onStatus?: (status: P2PStatus, detail?: string) => void;
+  /**
+   * 房主专用：把权威状态镜像到云端（对应 WS 的 room:snapshot 消息）。
+   * 房主关机后浏览器发不出任何东西，只能靠这条把房间内容留在云端，
+   * 让接管的人不会看到一个空房间。
+   */
+  onSnapshot?: (state: unknown) => void;
+  /**
+   * 房主专用：一条指令**没有任何直连客人收到**时，把这条原始指令镜像给云端。
+   *
+   * 为什么需要：客人刚进房、DataChannel 还没建好的这几秒里，房主的下发在本地就断了，
+   * 云端也一无所知 —— 客人看到的是一间静止的房间（别人不动、点播不出现），
+   * 表现出来就是「进房很慢」。镜像给云端后，这段时间由云端先兜着。
+   *
+   * 注意镜像的是**客户端指令**（player:move / video:control 这种），不是广播结果，
+   * 因为服务端 RoomCore 只认指令，收到广播会当作未知消息丢掉。
+   */
+  onMirrorCommand?: (json: string) => void;
 }
 
 const DC_LABEL = 'koko-state';
-
-function rtcConfig(): RTCConfiguration {
-  const iceServers: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ];
-  // 有 TURN 就带上（对称 NAT 需要），通过 VITE_TURN_URL / VITE_TURN_USER / VITE_TURN_PASS 注入
-  const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined;
-  if (turnUrl) {
-    iceServers.push({
-      urls: turnUrl,
-      username: (import.meta.env.VITE_TURN_USER as string | undefined) || undefined,
-      credential: (import.meta.env.VITE_TURN_PASS as string | undefined) || undefined,
-    });
-  }
-  return { iceServers };
-}
 
 interface PeerEntry {
   pc: RTCPeerConnection;
@@ -64,6 +65,10 @@ export class P2PRoom {
   private closed = false;
   private persistTimer: number | null = null;
   private everConnected = false;
+  /** 房主每 2 秒往各条 DataChannel 打一次心跳；客人据此判断房主是否还在 */
+  private pingTimer: number | null = null;
+  private watchdogTimer: number | null = null;
+  private lastHostSeenAt = 0;
   status: P2PStatus = 'connecting';
 
   constructor(opts: P2PRoomOptions) {
@@ -89,7 +94,12 @@ export class P2PRoom {
       this.restoreHostState();
       this.apply(this.core!.join(this.opts.selfId, joinMessage));
       this.startPersisting();
-      this.setStatus('connecting');
+      // 立刻镜像一次：否则进房头 5 秒内房主掉线，接管的人会看到空房间
+      this.persistNow();
+      // 房主本身就是权威，没有「连不上」这回事 —— 必须立刻置为 connected。
+      // 否则 App 里 6 秒的直连超时会先把房主踢回云端（房主进房时还没客人，
+      // status 永远是 connecting），之后的 p2p:signal 就再也没人应答了。
+      this.setStatus('connected');
       return;
     }
     // 客人：如果 hostId 就是自己，说明云端把我当房主了，直接降级为房主模式
@@ -122,16 +132,57 @@ export class P2PRoom {
     this.persistTimer = window.setInterval(() => this.persistNow(), 5000);
   }
 
+  // ── 心跳：客人问，房主答 ────────────────────────────────────────────
+  // 为什么是反向的：房主如果在后台标签，浏览器会把它的 setInterval 节流到 1 分钟一次，
+  // 由房主主动发心跳就会被误判成「房主没了」。改成客人每 2 秒发一问、房主在
+  // DataChannel 的 onmessage 里立刻回包 —— 那是网络事件，不受定时器节流影响。
+  // 房主直接关机时浏览器发不出 close 帧，只能等 ICE 自己超时（通常 30 秒以上），
+  // 心跳把这段压到 7 秒。
+  private startWatchdog() {
+    if (this.watchdogTimer) return;
+    this.lastHostSeenAt = Date.now();
+
+    if (this.pingTimer) window.clearInterval(this.pingTimer);
+    this.pingTimer = window.setInterval(() => {
+      if (this.closed) return;
+      const dc = this.peers.get(this.opts.hostId)?.dc;
+      if (dc?.readyState === 'open') {
+        try {
+          dc.send(JSON.stringify({ type: 'p2p:ping', t: Date.now() }));
+        } catch {
+          /* 下一轮再发 */
+        }
+      }
+    }, 2000);
+
+    this.watchdogTimer = window.setInterval(() => {
+      if (this.closed || this.status === 'failed') return;
+      if (Date.now() - this.lastHostSeenAt > 7000) {
+        this.setStatus('failed', '房主已离开，已切回云端房间');
+      }
+    }, 1500);
+  }
+
   private persistNow() {
     if (this.opts.role !== 'host' || !this.core) return;
+    let state: unknown;
     try {
-      localStorage.setItem(this.storageKey(), JSON.stringify(this.core.exportState()));
+      state = this.core.exportState();
+      localStorage.setItem(this.storageKey(), JSON.stringify(state));
     } catch {
-      /* 隐私模式或超配额，忽略 */
+      /* 隐私模式或超配额，忽略；云端镜像仍然要发 */
+    }
+    if (state) {
+      try {
+        this.opts.onSnapshot?.(state);
+      } catch {
+        /* 镜像失败不影响本地 */
+      }
     }
   }
 
-  private createPeer(remoteId: string): PeerEntry {    const pc = new RTCPeerConnection(rtcConfig());
+  private createPeer(remoteId: string): PeerEntry {
+    const pc = new RTCPeerConnection(buildRtcConfig());
     const entry: PeerEntry = { pc, dc: null, bindId: null };
     this.peers.set(remoteId, entry);
 
@@ -141,8 +192,14 @@ export class P2PRoom {
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'failed') {
-        this.setStatus('failed', `与 ${remoteId} 的连接失败（可能需要 TURN）`);
-      } else if (pc.connectionState === 'connected') {
+        // 客人连不上房主才回落云端；房主侧某个 peer 失败只是那个客人掉线，
+        // 不能把房主自己也踢回云端（那样整个房间的直连全废）
+        if (this.opts.role === 'guest') {
+          this.setStatus('failed', '与房主的连接失败（可能需要 TURN）');
+        } else {
+          console.warn('[p2p] peer connection failed:', remoteId);
+        }
+      } else if (pc.connectionState === 'connected' && this.opts.role === 'guest') {
         this.setStatus('connected');
       }
     };
@@ -166,6 +223,8 @@ export class P2PRoom {
         if (this.joinMsg) dc.send(JSON.stringify(this.joinMsg));
         this.flush();
         this.setStatus('connected');
+        // 通道通了才开始盯房主心跳：连不上的情况由 App 的 6 秒超时兜底
+        this.startWatchdog();
       } else {
         this.setStatus('connected');
         // 房主：等对方发 join
@@ -181,6 +240,9 @@ export class P2PRoom {
       if (this.opts.role === 'host') {
         this.hostHandle(remoteId, msg);
       } else {
+        // 任何一条来自房主的消息都算「房主还活着」，不只是心跳
+        this.lastHostSeenAt = Date.now();
+        if (msg.type === 'p2p:pong') return;
         this.opts.onMessage(msg);
       }
     };
@@ -204,6 +266,7 @@ export class P2PRoom {
         if (this.joinMsg) dc.send(JSON.stringify(this.joinMsg));
         this.flush();
         this.setStatus('connected');
+        this.startWatchdog();
       }
     }
   }
@@ -250,6 +313,18 @@ export class P2PRoom {
   private hostHandle(remoteId: string, msg: Record<string, any>) {
     const core = this.core!;
     const entry = this.peers.get(remoteId);
+
+    // 客人的存活探测：直接回包，别进核心（这是传输层的事，不是房间状态）
+    if (msg.type === 'p2p:ping') {
+      if (entry?.dc && entry.dc.readyState === 'open') {
+        try {
+          entry.dc.send(JSON.stringify({ type: 'p2p:pong', t: Date.now() }));
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
 
     if (msg.type === 'room:join') {
       const pid =
@@ -310,6 +385,15 @@ export class P2PRoom {
       } else if (msg.type === 'p2p:signal' || msg.type === 'webrtc:signal') {
         // 房主自己不转发信令，交给云端那条 WS
       } else {
+        // 没有任何直连客人收得到 → 把这条指令镜像给云端，让「正在建直连」的人也能实时看到
+        let anyOpen = false;
+        for (const entry of this.peers.values()) {
+          if (entry.dc && entry.dc.readyState === 'open') {
+            anyOpen = true;
+            break;
+          }
+        }
+        if (!anyOpen) this.opts.onMirrorCommand?.(json);
         this.apply(this.core!.handle(this.opts.selfId, msg));
       }
       return;
@@ -342,6 +426,14 @@ export class P2PRoom {
     if (this.persistTimer) {
       window.clearInterval(this.persistTimer);
       this.persistTimer = null;
+    }
+    if (this.pingTimer) {
+      window.clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+    if (this.watchdogTimer) {
+      window.clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
     }
     this.persistNow();
     for (const entry of this.peers.values()) {

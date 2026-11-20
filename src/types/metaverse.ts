@@ -93,9 +93,13 @@ export interface PlayerState {
   isBroadcasting: boolean;
   isHost: boolean;
   speakingLevel?: number;
+  /** 手上扛着谁：`@screen` 或玩家 id */
+  carryTarget?: string | null;
+  /** 被谁扛着 */
+  carriedBy?: string | null;
 }
 
-export type VideoSourceType = 'builtin' | 'mp4' | 'youtube' | 'bilibili';
+export type VideoSourceType = 'builtin' | 'mp4' | 'hls' | 'youtube' | 'bilibili';
 
 export interface VideoQueueItem {
   id: string;
@@ -121,6 +125,8 @@ export interface VideoState {
   controllerName?: string;
   /** 当前放的是默认待机短片（还没人点播过）：此时点播会直接开播，不用排队 */
   isPlaceholder?: boolean;
+  /** 跳过投票：只对 itemId 这一部有效，换片自动清空 */
+  skipVote?: { itemId: string; voters: string[]; threshold: number } | null;
 }
 
 export interface FloatingReaction {

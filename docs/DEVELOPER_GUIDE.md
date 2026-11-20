@@ -9,7 +9,7 @@ KokoSpace 是一个支持桌面端与移动端无缝联机的 2D 扁平矢量元
 - **前端视图层**：React 19 + TypeScript + Tailwind CSS v4 + HTML5 Canvas 2D 世界引擎
 - **实时同步与信令**：Node.js + Express + `ws` WebSocket 权威房间服务端（统一运行在 3000 端口）
 - **实时空间语音**：WebRTC 点对点音频流 + Web Audio API `GainNode` 空间距离衰减与舞台广播
-- **云端跨平台持久化**：Firebase Authentication（Google OAuth）+ Cloud Firestore（零信任安全规则）
+- **本地持久化**：localStorage（形象、本机场景方案、个人点播记录），无账号体系、不联网
 
 ---
 
@@ -23,6 +23,7 @@ KokoSpace 是一个支持桌面端与移动端无缝联机的 2D 扁平矢量元
 | `room:init` | Server → Client | 下发完整房间状态（在线玩家、家具布局、权威视频进度、服务器时间） |
 | `player:move` / `player:moved` | 双向广播 | 同步玩家坐标 `(x, y)`、朝向 `dir`、移动态与落座状态 |
 | `video:control` / `video:synced` | 双向广播 | 同步中央巨幕播放、暂停、进度条拖拽及点播队列变更 |
+| `video:control action:'vote_skip'` | Client → Server | 跳过投票：`skipVote` 存在 `videoState` 里，满 `SKIP_VOTE_THRESHOLD`（2）票服务端直接切下一部，换片自动归零 |
 | `player:reaction` | 双向广播 | 触发人物头顶浮动表情包或近距离互动动作 |
 | `player:chat` | 双向广播 | 发送空间头顶聊天气泡与聊天面板消息 |
 | `scene:update` / `scene:updated` | 双向广播 | 切换地图主题或实时增删改地图家具 |

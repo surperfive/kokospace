@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
-import { X, Map, Armchair, CloudUpload, Trash2, Check, Sparkles } from 'lucide-react';
-import { User } from 'firebase/auth';
-import { FurnitureType, MapId, MapThemeDefinition, ScenePreset } from '../types/metaverse';
+import { X, Map, Armchair, HardDrive, Trash2, Check, Sparkles } from 'lucide-react';
+import { FurnitureType, MapId, MapThemeDefinition } from '../types/metaverse';
+import type { LocalScenePreset } from '../lib/scenePresets';
 
 interface SceneEditorModalProps {
   isOpen: boolean;
   maps: MapThemeDefinition[];
   currentMapId: MapId;
-  user: User | null;
-  savedScenes: ScenePreset[];
+  savedScenes: LocalScenePreset[];
   isEditingOnCanvas: boolean;
   selectedBrush: FurnitureType | 'erase';
   onClose: () => void;
@@ -16,10 +15,9 @@ interface SceneEditorModalProps {
   onToggleCanvasEditMode: (editing: boolean) => void;
   onSelectBrush: (brush: FurnitureType | 'erase') => void;
   onResetFurniture: () => void;
-  onSaveSceneToCloud: (roomName: string, isPublic: boolean) => Promise<void>;
-  onLoadCloudScene: (preset: ScenePreset) => void;
-  onDeleteCloudScene: (sceneId: string) => Promise<void>;
-  onSignInGoogle: () => void;
+  onSaveSceneLocal: (roomName: string) => Promise<void>;
+  onLoadLocalScene: (preset: LocalScenePreset) => void;
+  onDeleteLocalScene: (sceneId: string) => Promise<void>;
 }
 
 const BRUSH_ITEMS: Array<{ type: FurnitureType | 'erase'; label: string }> = [
@@ -38,7 +36,6 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
   isOpen,
   maps,
   currentMapId,
-  user,
   savedScenes,
   isEditingOnCanvas,
   selectedBrush,
@@ -47,10 +44,9 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
   onToggleCanvasEditMode,
   onSelectBrush,
   onResetFurniture,
-  onSaveSceneToCloud,
-  onLoadCloudScene,
-  onDeleteCloudScene,
-  onSignInGoogle,
+  onSaveSceneLocal,
+  onLoadLocalScene,
+  onDeleteLocalScene,
 }) => {
   const [sceneName, setSceneName] = useState('我的专属影院布置');
   const [saving, setSaving] = useState(false);
@@ -59,10 +55,10 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
   if (!isOpen) return null;
 
   const handleSave = async () => {
-    if (saving || !user) return;
+    if (saving) return;
     setSaving(true);
     try {
-      await onSaveSceneToCloud(sceneName, false);
+      await onSaveSceneLocal(sceneName);
       setSavedFeedback(true);
       setTimeout(() => setSavedFeedback(false), 2000);
     } finally {
@@ -181,87 +177,77 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
             </div>
           </section>
 
-          {/* Cloud Scene Presets (Firestore) */}
+          {/* 本机场景方案（localStorage，无需登录） */}
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-zinc-800">
-              <CloudUpload className="w-4 h-4 text-[#FF5A36]" />
-              <span>云端跨平台场景方案</span>
+              <HardDrive className="w-4 h-4 text-[#FF5A36]" />
+              <span>本机场景方案</span>
             </div>
 
-            {!user ? (
-              <div className="p-4 rounded-2xl border border-dashed border-zinc-300 text-center space-y-2">
-                <p className="text-xs text-zinc-600">登录 Google 账号后，可将当前家具与地图方案同步至云端，跨设备一键加载。</p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={sceneName}
+                  onChange={(e) => setSceneName(e.target.value)}
+                  maxLength={40}
+                  placeholder="为当前场景命名"
+                  className="flex-1 px-3 py-2 rounded-xl border border-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#FF5A36]/40"
+                />
                 <button
                   type="button"
-                  onClick={onSignInGoogle}
-                  className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 cursor-pointer"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-xl bg-[#FF5A36] hover:bg-[#E84B28] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                 >
-                  立即登录 Google 同步
+                  {savedFeedback ? <Check className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  {savedFeedback ? '已保存' : '保存当前方案'}
                 </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={sceneName}
-                    onChange={(e) => setSceneName(e.target.value)}
-                    maxLength={40}
-                    placeholder="为当前场景命名"
-                    className="flex-1 px-3 py-2 rounded-xl border border-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#FF5A36]/40"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-4 py-2 rounded-xl bg-[#FF5A36] hover:bg-[#E84B28] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                  >
-                    {savedFeedback ? <Check className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    {savedFeedback ? '已同步云端' : '保存当前方案'}
-                  </button>
-                </div>
+              <p className="text-[11px] text-zinc-500 leading-relaxed">
+                方案保存在这台设备上（同名会覆盖），换设备不会同步，也不需要登录。
+              </p>
 
-                {savedScenes.length === 0 ? (
-                  <p className="text-xs text-zinc-400 py-2">暂无云端保存的场景方案，点击上方保存当前配置。</p>
-                ) : (
-                  <div className="space-y-2">
-                    {savedScenes.map((preset) => (
-                      <div
-                        key={preset.sceneId}
-                        className="flex items-center justify-between p-3 rounded-2xl border border-zinc-200 bg-white"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-zinc-900 truncate">{preset.roomName}</div>
-                          <div className="text-[11px] text-zinc-500">
-                            地图: {preset.mapId} · 家具数量: {preset.furniture.length}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onLoadCloudScene(preset);
-                              onClose();
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 cursor-pointer"
-                          >
-                            应用
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteCloudScene(preset.sceneId)}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                            title="删除方案"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+              {savedScenes.length === 0 ? (
+                <p className="text-xs text-zinc-400 py-2">还没有保存过方案，点击上方按钮存一份。</p>
+              ) : (
+                <div className="space-y-2">
+                  {savedScenes.map((preset) => (
+                    <div
+                      key={preset.sceneId}
+                      className="flex items-center justify-between p-3 rounded-2xl border border-zinc-200 bg-white"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-zinc-900 truncate">{preset.roomName}</div>
+                        <div className="text-[11px] text-zinc-500">
+                          地图: {preset.mapId} · 家具数量: {preset.furniture.length}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onLoadLocalScene(preset);
+                            onClose();
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 cursor-pointer"
+                        >
+                          应用
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteLocalScene(preset.sceneId)}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                          title="删除方案"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         </div>
       </div>

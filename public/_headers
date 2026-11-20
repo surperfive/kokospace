@@ -1,0 +1,17 @@
+# Cloudflare Workers 静态资源的默认响应头是
+#   Cache-Control: public, max-age=0, must-revalidate
+# 也就是每次打开页面都要为每个资源回源验证一次。链路差的时候，一个来回就是 1~2 秒，
+# 而首屏要拿 index.html + js + css 三样，等于白白多花好几秒。
+#
+# 带 hash 的文件内容永不变，可以放心长缓存；index.html 必须保持每次验证，
+# 否则发新版本后用户会一直用旧的入口文件。
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 自托管字体同理：文件名固定但内容不随发版变化，
+# 长缓存后第二次打开完全不走网络，弱网下省掉 3 个来回。
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

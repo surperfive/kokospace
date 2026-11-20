@@ -41,7 +41,7 @@ Cloudflare Workers（前端静态资源 + Durable Object 房间）  ← 访问�
 打开 <https://github.com/new> → Repository name 填 `kokospace` → **不要**勾 "Add a README" / "Add .gitignore" / license → Create repository。
 
 > 建议选 **Public**：Actions 分钟数不限；私有仓库每月 2000 分钟（一次部署约 1 分钟，其实也够）。
-> 这个仓库里没有密钥（Firebase 的 apiKey 是前端公开配置，不是 secret），公开是安全的。
+> 这个仓库里没有密钥，公开是安全的。
 
 ### 2. 建一个 Cloudflare API Token
 

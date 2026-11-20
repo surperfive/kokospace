@@ -1,6 +1,5 @@
 import React from 'react';
-import { Dices, Check, Cloud, LogIn, LogOut, X } from 'lucide-react';
-import { User } from 'firebase/auth';
+import { Dices, Check, X } from 'lucide-react';
 import { AvatarConfig, AvatarPartPluginItem } from '../types/metaverse';
 import { HAIR_PALETTE, OUTFIT_PALETTE, SKIN_PALETTE } from '../data/maps';
 import { AvatarPreviewCanvas } from './AvatarPreviewCanvas';
@@ -10,15 +9,11 @@ interface AvatarEditorModalProps {
   isInitialLobby: boolean;
   name: string;
   avatar: AvatarConfig;
-  user: User | null;
   roomId: string;
-  isSyncingCloud: boolean;
   pluginParts: AvatarPartPluginItem[];
   onChangeName: (name: string) => void;
   onChangeRoomId: (roomId: string) => void;
   onChangeAvatar: (avatar: AvatarConfig) => void;
-  onSignInGoogle: () => void;
-  onSignOut: () => void;
   onSaveAndEnter: () => void;
   onClose?: () => void;
 }
@@ -61,15 +56,11 @@ export const AvatarEditorModal: React.FC<AvatarEditorModalProps> = ({
   isInitialLobby,
   name,
   avatar,
-  user,
   roomId,
-  isSyncingCloud,
   pluginParts,
   onChangeName,
   onChangeRoomId,
   onChangeAvatar,
-  onSignInGoogle,
-  onSignOut,
   onSaveAndEnter,
   onClose,
 }) => {
@@ -130,41 +121,11 @@ export const AvatarEditorModal: React.FC<AvatarEditorModalProps> = ({
             </button>
           </div>
 
-          {/* Google Account Cloud Sync Block */}
+          {/* 形象与昵称只保存在本机，没有账号体系 */}
           <div className="w-full pt-4 border-t border-zinc-200/80">
-            {user ? (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-xs text-emerald-700 font-medium">
-                  <Cloud className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">已登录 · {user.displayName || user.email}</span>
-                </div>
-                <p className="text-[11px] text-zinc-500 leading-relaxed">
-                  形象与自定义场景将自动同步至云端，手机电脑登录同一账号即可恢复。
-                </p>
-                <button
-                  type="button"
-                  onClick={onSignOut}
-                  className="mt-1 w-full py-1.5 px-3 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-100 text-xs font-medium text-zinc-700 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  退出登录
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={onSignInGoogle}
-                  className="w-full py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  Google 登录云端同步
-                </button>
-                <p className="text-[11px] text-zinc-500 text-center">
-                  或直接作为游客进入体验
-                </p>
-              </div>
-            )}
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              形象与昵称保存在这台设备上，下次打开自动恢复。无需登录任何账号。
+            </p>
           </div>
         </div>
 
@@ -372,11 +333,10 @@ export const AvatarEditorModal: React.FC<AvatarEditorModalProps> = ({
             <button
               type="button"
               onClick={onSaveAndEnter}
-              disabled={isSyncingCloud}
               className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#FF5A36] hover:bg-[#E84B28] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-60"
             >
               <Check className="w-4 h-4" />
-              {isInitialLobby ? '进入共看空间' : '保存并同步形象'}
+              {isInitialLobby ? '进入共看空间' : '保存形象'}
             </button>
           </div>
         </div>

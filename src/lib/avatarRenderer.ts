@@ -37,6 +37,10 @@ export interface DrawChibiOptions {
   timeMs: number;
   speakingLevel?: number;
   chatBubble?: string;
+  /** 被扛在肩上时：不画地面影子（影子会飘在半空） */
+  hideShadow?: boolean;
+  /** 被扛在肩上时：不画名字牌（会盖住扛人者的脸） */
+  hideName?: boolean;
 }
 
 export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOptions) {
@@ -55,6 +59,8 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
     timeMs,
     speakingLevel = 0,
     chatBubble,
+    hideShadow = false,
+    hideName = false,
   } = opts;
 
   ctx.save();
@@ -77,10 +83,12 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
   }
 
   // Ground shadow
-  ctx.beginPath();
-  ctx.ellipse(0, 15, isSitting ? 16 : 14, 6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(24, 24, 27, 0.16)';
-  ctx.fill();
+  if (!hideShadow) {
+    ctx.beginPath();
+    ctx.ellipse(0, 15, isSitting ? 16 : 14, 6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(24, 24, 27, 0.16)';
+    ctx.fill();
+  }
 
   const walkCycle = isMoving ? Math.sin(timeMs / 95) : 0;
   const bounce = isMoving ? Math.abs(walkCycle) * -4 : Math.sin(timeMs / 550) * 1.1;
@@ -351,31 +359,33 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
     ctx.stroke();
   }
 
-  // Nameplate tag below feet
+  // Nameplate tag below feet（被扛在肩上时不画，否则正好压在扛人者脸上）
   ctx.translate(0, -(bounce + sitDrop));
-  const label = `${isHost ? '★ ' : ''}${name}${isMe ? ' (我)' : ''}`;
-  ctx.font = '600 11px "Plus Jakarta Sans", "PingFang SC", sans-serif';
-  const tw = ctx.measureText(label).width;
-  const boxW = tw + (isMicOn ? 22 : 14);
-  const boxH = 20;
+  if (!hideName) {
+    const label = `${isHost ? '★ ' : ''}${name}${isMe ? ' (我)' : ''}`;
+    ctx.font = '600 11px "Plus Jakarta Sans", "PingFang SC", sans-serif';
+    const tw = ctx.measureText(label).width;
+    const boxW = tw + (isMicOn ? 22 : 14);
+    const boxH = 20;
 
-  ctx.fillStyle = isMe ? 'rgba(24, 24, 27, 0.88)' : 'rgba(255, 255, 255, 0.92)';
-  roundRectPath(ctx, -boxW / 2, 22, boxW, boxH, 6);
-  ctx.fill();
-  ctx.strokeStyle = isMe ? '#18181B' : 'rgba(24, 24, 27, 0.14)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  ctx.fillStyle = isMe ? '#FFFFFF' : '#18181B';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, isMicOn ? -4 : 0, 32.5);
-
-  if (isMicOn) {
-    ctx.fillStyle = isBroadcasting ? '#FF5A36' : '#10B981';
-    ctx.beginPath();
-    ctx.arc(boxW / 2 - 8, 32, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = isMe ? 'rgba(24, 24, 27, 0.88)' : 'rgba(255, 255, 255, 0.92)';
+    roundRectPath(ctx, -boxW / 2, 22, boxW, boxH, 6);
     ctx.fill();
+    ctx.strokeStyle = isMe ? '#18181B' : 'rgba(24, 24, 27, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = isMe ? '#FFFFFF' : '#18181B';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, isMicOn ? -4 : 0, 32.5);
+
+    if (isMicOn) {
+      ctx.fillStyle = isBroadcasting ? '#FF5A36' : '#10B981';
+      ctx.beginPath();
+      ctx.arc(boxW / 2 - 8, 32, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // Floating Speech Bubble above head

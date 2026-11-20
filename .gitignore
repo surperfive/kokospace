@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+dist*/
 coverage/
 .DS_Store
 *.log
@@ -11,3 +12,12 @@ coverage/
 .wrangler/
 .dev.vars*
 _scratch/
+
+# 本地联调临时产物（无头 Chrome 配置目录、验证截图、一次性脚本）
+_chrome*/
+_shot-*.png
+_*.mjs
+_*.ts
+
+# AI 协作的本地工作数据（会话记录、项目记忆），不进公开仓库
+.workbuddy-ai/

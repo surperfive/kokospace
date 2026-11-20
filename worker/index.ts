@@ -12,6 +12,7 @@
  */
 
 import { RoomCore, sanitizeRoomId, type Outbound } from '../src/lib/roomCore';
+import { fetchVideoMeta } from '../src/lib/videoMeta';
 
 export interface Env {
   ROOMS: DurableObjectNamespace;
@@ -38,6 +39,25 @@ export default {
       return Response.json({ ok: true, runtime: 'cloudflare-workers', timestamp: Date.now() });
     }
 
+    // 视频链接元信息（标题 / 封面 / 时长）。B 站对齐滑块靠 durationSec 定量程，
+    // 线上缺这个接口会退化成「时长未知」，所以和本地 Express 用同一份实现。
+    if (url.pathname === '/api/parse-video') {
+      if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
+      }
+      let videoUrl = '';
+      try {
+        const body = (await request.json()) as { url?: string };
+        videoUrl = typeof body?.url === 'string' ? body.url.trim() : '';
+      } catch {
+        /* 非法 JSON 按空链接处理 */
+      }
+      if (!videoUrl) {
+        return Response.json({ error: '请输入有效的视频链接' }, { status: 400 });
+      }
+      return Response.json(await fetchVideoMeta(videoUrl));
+    }
+
     // 静态资源 + SPA 回退
     return env.ASSETS.fetch(request);
   },
@@ -46,8 +66,44 @@ export default {
 export class RoomDurableObject {
   private core: RoomCore | null = null;
   private sockets = new Map<string, WebSocket>();
+  /** 片尾看门狗：客户端 rAF 在后台标签页会被浏览器暂停，服务端每秒兜底推进 */
+  private watchdog: ReturnType<typeof setInterval> | null = null;
 
   constructor(_ctx: DurableObjectState) {}
+
+  private sendRaw(ws: WebSocket, payload: unknown): void {
+    try {
+      ws.send(JSON.stringify(payload));
+    } catch {
+      /* 连接已断开，忽略 */
+    }
+  }
+
+  private startWatchdog(): void {
+    if (this.watchdog) return;
+    this.watchdog = setInterval(() => {
+      const core = this.core;
+      if (!core) return;
+      const out = core.tick(Date.now());
+      for (const item of out) {
+        if (item.kind === 'to') {
+          const target = this.sockets.get(item.targetId);
+          if (target) this.sendRaw(target, item.payload);
+        } else {
+          for (const [pid, ws] of this.sockets.entries()) {
+            if (item.excludeId && pid === item.excludeId) continue;
+            this.sendRaw(ws, item.payload);
+          }
+        }
+      }
+    }, 1000);
+  }
+
+  private stopWatchdog(): void {
+    if (!this.watchdog) return;
+    clearInterval(this.watchdog);
+    this.watchdog = null;
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -73,13 +129,7 @@ export class RoomDurableObject {
 
     let playerId: string | null = null;
 
-    const send = (ws: WebSocket, payload: unknown) => {
-      try {
-        ws.send(JSON.stringify(payload));
-      } catch {
-        /* 连接已断开，忽略 */
-      }
-    };
+    const send = (ws: WebSocket, payload: unknown) => this.sendRaw(ws, payload);
 
     const apply = (out: Outbound[]) => {
       for (const item of out) {
@@ -110,6 +160,7 @@ export class RoomDurableObject {
             : `p_${Math.random().toString(36).slice(2, 10)}`;
         playerId = pid;
         this.sockets.set(pid, server);
+        this.startWatchdog();
         apply(core.join(pid, msg));
         return;
       }
@@ -123,6 +174,12 @@ export class RoomDurableObject {
         return;
       }
 
+      // P2P 房主把权威状态镜像过来：房主关机后，云端房间不是空的，接管的人能接着播
+      if (msg.type === 'room:snapshot') {
+        if (core.hostId === playerId && msg.state) core.restoreState(msg.state);
+        return;
+      }
+
       apply(core.handle(playerId, msg));
     });
 
@@ -132,6 +189,10 @@ export class RoomDurableObject {
       playerId = null;
       this.sockets.delete(pid);
       apply(core.leave(pid));
+      // 人走光了就停掉看门狗，别让空房间空转
+      if (this.sockets.size === 0) this.stopWatchdog();
+      // 和 Node 端一致：人走光了就把房间清掉，否则同名房间下次进来会看到上一场的内容
+      if (core.isEmpty) this.core = new RoomCore(core.roomId);
     };
 
     server.addEventListener('close', cleanup);

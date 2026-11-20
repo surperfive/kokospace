@@ -1,4 +1,4 @@
-﻿# 手动部署到 Cloudflare（一条命令跑完全流程）
+# 手动部署到 Cloudflare（一条命令跑完全流程）
 # 用法：右键「使用 PowerShell 运行」，或在项目目录执行
 #   powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
 # 说明：第一次会弹浏览器要求登录 Cloudflare；之后每次只做构建 + 部署。

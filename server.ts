@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
-import { RoomCore, parseVideoUrlServer, sanitizeRoomId, type Outbound } from './src/lib/roomCore';
+import { RoomCore, sanitizeRoomId, type Outbound } from './src/lib/roomCore';
+import { fetchVideoMeta } from './src/lib/videoMeta';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,28 @@ interface RoomEntry {
 }
 
 const rooms = new Map<string, RoomEntry>();
+
+const send = (target: WebSocket, payload: unknown) => {
+  if (target.readyState === WebSocket.OPEN) {
+    target.send(JSON.stringify(payload));
+  }
+};
+
+/** 把 RoomCore 产出的事件派发到房间里的连接上 */
+const apply = (room: RoomEntry, out: Outbound[]) => {
+  for (const item of out) {
+    if (item.kind === 'to') {
+      const target = room.sockets.get(item.targetId);
+      if (target) send(target, item.payload);
+    } else {
+      const data = JSON.stringify(item.payload);
+      for (const [pid, target] of room.sockets.entries()) {
+        if (item.excludeId && pid === item.excludeId) continue;
+        if (target.readyState === WebSocket.OPEN) target.send(data);
+      }
+    }
+  }
+};
 
 function getOrCreateRoom(roomId: string): RoomEntry {
   const normalized = sanitizeRoomId(roomId);
@@ -38,13 +61,13 @@ async function startServer() {
     res.json({ rooms: Array.from(rooms.values()).map((r) => r.core.snapshot()) });
   });
 
-  app.post('/api/parse-video', (req, res) => {
-    const url = typeof req.body?.url === 'string' ? req.body.url : '';
-    if (!url.trim()) {
+  app.post('/api/parse-video', async (req, res) => {
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    if (!url) {
       res.status(400).json({ error: '请输入有效的视频链接' });
       return;
     }
-    res.json(parseVideoUrlServer(url));
+    res.json(await fetchVideoMeta(url));
   });
 
   const server = http.createServer(app);
@@ -53,27 +76,6 @@ async function startServer() {
   wss.on('connection', (ws: WebSocket) => {
     let entry: RoomEntry | null = null;
     let playerId: string | null = null;
-
-    const send = (target: WebSocket, payload: unknown) => {
-      if (target.readyState === WebSocket.OPEN) {
-        target.send(JSON.stringify(payload));
-      }
-    };
-
-    const apply = (room: RoomEntry, out: Outbound[]) => {
-      for (const item of out) {
-        if (item.kind === 'to') {
-          const target = room.sockets.get(item.targetId);
-          if (target) send(target, item.payload);
-        } else {
-          const data = JSON.stringify(item.payload);
-          for (const [pid, target] of room.sockets.entries()) {
-            if (item.excludeId && pid === item.excludeId) continue;
-            if (target.readyState === WebSocket.OPEN) target.send(data);
-          }
-        }
-      }
-    };
 
     ws.on('message', (raw) => {
       let msg: Record<string, any>;
@@ -105,6 +107,12 @@ async function startServer() {
         return;
       }
 
+      // P2P 房主把权威状态镜像过来：房主关机后，云端房间不是空的，接管的人能接着播
+      if (msg.type === 'room:snapshot') {
+        if (entry.core.hostId === playerId && msg.state) entry.core.restoreState(msg.state);
+        return;
+      }
+
       apply(entry, entry.core.handle(playerId, msg));
     });
 
@@ -122,6 +130,16 @@ async function startServer() {
       }
     });
   });
+
+  // 看门狗：客户端靠 rAF 判断播完，切后台就停摆，这里每秒用权威时钟兜底推进
+  const watchdog = setInterval(() => {
+    const now = Date.now();
+    for (const room of rooms.values()) {
+      const out = room.core.tick(now);
+      if (out.length) apply(room, out);
+    }
+  }, 1000);
+  watchdog.unref?.();
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

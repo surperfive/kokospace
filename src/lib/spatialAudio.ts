@@ -1,4 +1,5 @@
 import { PlayerState } from '../types/metaverse';
+import { buildRtcConfig } from './rtcConfig';
 
 export const PROXIMITY_RADIUS = 420;
 export const FULL_VOLUME_RADIUS = 110;
@@ -13,12 +14,8 @@ interface PeerAudioEntry {
 
 type SignalSender = (targetId: string, signal: unknown) => void;
 
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
+// 和状态通道共用同一份 ICE 配置，避免两处 STUN 列表各自漂移
+const RTC_CONFIG: RTCConfiguration = buildRtcConfig();
 
 export class SpatialAudioManager {
   private localStream: MediaStream | null = null;

@@ -9,13 +9,185 @@
     <meta property="og:description" content="手机与电脑通用的 2D 扁平矢量元宇宙共看空间，支持 Q 版虚拟化身、中央巨幕多人点播同步、空间距离实时语音、表情包互动与跨平台云端同步。" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!--
+      字体已自托管到 /fonts/（见 src/index.css 的 @font-face）。
+      原先直接引 fonts.googleapis.com：国内这两个域名基本不可达，
+      请求会一直挂到超时才失败，白白占掉连接名额，还会拖慢后续资源。
+      现在同源同连接，只多两个 30KB 的文件。
+      预加载正文字体 + 标题字体：它们跟 CSS 并行下载，不占额外往返。
+      字体是 CORS 模式拉取的，同源也必须带 crossorigin，否则会重复下载。
+    -->
+    <link rel="preload" href="/fonts/PlusJakartaSans.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/Outfit.woff2" as="font" type="font/woff2" crossorigin />
+    <!--
+      首屏引导层：index.html 只有 1KB，JS 包却有 900KB。
+      在网络抖动的时候（到 Cloudflare 的 RTT 从 0.9s 飙到 7s 都见过），
+      原本 <div id="root"></div> 是纯白一片，用户以为「点不进去」。
+      这里用内联样式先画一个品牌加载态，零额外请求，React 挂载后自动顶掉。
+      延迟 120ms 才淡入：网络快的话根本看不到，不会闪一下。
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #f4f5f7;
+        -webkit-text-size-adjust: 100%;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 24px;
+        box-sizing: border-box;
+        text-align: center;
+        color: #18181b;
+        background: #f4f5f7;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+          'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+        opacity: 0;
+        animation: bootIn 0.24s ease 0.12s forwards;
+      }
+      @keyframes bootIn {
+        to {
+          opacity: 1;
+        }
+      }
+      #boot .mark {
+        width: 60px;
+        height: 60px;
+        border-radius: 19px;
+        background: #ff5a36;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 25px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        box-shadow: 0 10px 28px rgba(255, 90, 54, 0.26);
+      }
+      #boot .title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      #boot .sub {
+        font-size: 12.5px;
+        color: #71717a;
+        margin-top: -8px;
+      }
+      #boot .bar {
+        width: 148px;
+        height: 3px;
+        border-radius: 99px;
+        background: rgba(24, 24, 27, 0.09);
+        overflow: hidden;
+      }
+      #boot .bar > i {
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: 99px;
+        background: #ff5a36;
+        animation: bootSlide 1.15s ease-in-out infinite;
+      }
+      @keyframes bootSlide {
+        0% {
+          transform: translateX(-110%);
+        }
+        100% {
+          transform: translateX(260%);
+        }
+      }
+      #boot .slow {
+        display: none;
+      }
+      #boot.is-slow .bar,
+      #boot.is-slow .sub {
+        display: none;
+      }
+      #boot.is-slow .slow {
+        display: block;
+        max-width: 300px;
+      }
+      #boot .slow p {
+        margin: 0 0 12px;
+        font-size: 12.5px;
+        line-height: 1.6;
+        color: #71717a;
+      }
+      #boot .slow button {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        padding: 9px 20px;
+        border-radius: 99px;
+        background: #ff5a36;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: inherit;
+        box-shadow: 0 6px 16px rgba(255, 90, 54, 0.28);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot {
+          animation: none;
+          opacity: 1;
+        }
+        #boot .bar > i {
+          animation: none;
+          width: 100%;
+        }
+      }
+    </style>
   </head>
   <body class="bg-[#F4F5F7] text-[#18181B] antialiased selection:bg-[#FF5A36]/20 selection:text-[#18181B]">
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot">
+        <div class="mark">K</div>
+        <div class="title">正在进入 KokoSpace</div>
+        <div class="sub">日落天台影院</div>
+        <div class="bar"><i></i></div>
+        <div class="slow">
+          <p>网络有点慢，资源还没加载完。<br />换个网络或挂代理会快很多。</p>
+          <button type="button" onclick="kokoRetry()">重新加载</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      // 首屏兜底：9 秒还没被 React 顶掉，就说明卡在下载或执行阶段，直接给出重试入口。
+      // 脚本 404（发版后旧页面引用了已删除的包）会立刻触发 error，不用等满 9 秒。
+      (function () {
+        var timer = window.setTimeout(function () {
+          var boot = document.getElementById('boot');
+          if (boot) boot.className = 'is-slow';
+        }, 9000);
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            var el = e.target;
+            if (!el || !el.tagName || el.tagName !== 'SCRIPT') return;
+            window.clearTimeout(timer);
+            var boot = document.getElementById('boot');
+            if (boot) boot.className = 'is-slow';
+          },
+          true
+        );
+
+        // 加时间戳重取 index.html，绕开可能已经过期的 HTML 缓存
+        window.kokoRetry = function () {
+          var url = new URL(window.location.href);
+          url.searchParams.set('r', String(Date.now()));
+          window.location.replace(url.toString());
+        };
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

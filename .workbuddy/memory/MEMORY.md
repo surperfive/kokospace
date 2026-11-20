@@ -25,6 +25,12 @@
 
 ## 代码托管与发布
 - 仓库已 `git init -b main`，首个提交 `88a1f1f`。目标是 GitHub 托管 + Actions 自动部署（不推 GitHub Pages，Pages 跑不了 WS）。
+  ⚠️ **`Downloads\kokospace (1)` 这个目录里没有 `.git`**（2026-11-20 确认，`Test-Path .git` = False），是后来下载的副本。
+  在这个目录改完代码**不会自动上线**，必须手动 `npm run deploy`（vite build + wrangler deploy）。
+- `npx wrangler deployments list` / `deploy` 依赖本机 wrangler OAuth（kccogk@outlook.com，权限含 workers_scripts:write）。
+  2026-11-20 上午报过一次「token expired」，是代理/网络导致，重试即恢复；`npm run deploy` 已成功发布过（Version `0c7f155d`）。
+- 本机连不上 workers.dev（直连超时、代理 502），验证线上只能用 `check-host.net/check-http` 从境外节点探状态码。
+- wrangler 部署时打「No updated asset files to upload」不代表没传，新 hash 资源实际是 200 的，别被这句话骗了。
 - `.github/workflows/deploy.yml` + 两个仓库 secret（`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`）→ push main 即上线。
 - `.npmrc` 里 `legacy-peer-deps=true`，CI 与本地都不用再带参数。
 - 前端 WS 默认同源，可用 `VITE_WS_URL` 覆盖（只在「前端单独托管」时才需要）。
@@ -47,3 +53,8 @@
 - 本项目必须是 Worker：房间靠 Durable Object，Pages 没有 DO 绑定。
 - 卡片上「最近一次提交信息」是 **Git 连接**的效果，不是图标。接 Git（Workers Builds）后 Worker 卡片也会显示提交，
   但图标仍是菱形。接 Git 的副作用：第一次构建会部署仓库最新代码（会覆盖手动回滚的旧版），且与 GitHub Actions 双重部署。
+
+## 本地验证环境
+- **3000 和 3100 端口已被占**（3000 是 `D:\Infinite-Canvas-main` 的 python）。本地起服务用 `$env:PORT="4321"; npm run dev`。
+- 本机无 `playwright`，只有 `Downloads\qing (2)\node_modules\playwright-core`，配 `channel: 'chrome'` 可用。
+- 巨幕按钮在世界坐标里，常在视口外 → 用 DOM `el.click()` 直投；截图先点「影院放大聚焦」。

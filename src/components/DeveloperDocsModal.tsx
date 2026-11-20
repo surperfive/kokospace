@@ -155,6 +155,7 @@ export const DeveloperDocsModal: React.FC<DeveloperDocsModalProps> = ({
                   <li>video:queued — 点播只入队时给发起人的回执（含排队位次，不换片）</li>
                   <li>video:rejected — 非点播人修改播放进度时被拒绝（控片权在点播人手上）</li>
                   <li>video:control(action=progress) — 点播人每 2 秒上报真实播放位置，静默广播给全房间对齐</li>
+                  <li>video:control(action=vote_skip) — 跳过投票：房主/点播人可直接 next，其他人满 2 票自动切下一部</li>
                   <li>webrtc:signal — 点对点空间语音 SDP/ICE 信令透传</li>
                   <li>scene:update / scene:updated — 地图切换与可交互家具实时同步</li>
                 </ul>

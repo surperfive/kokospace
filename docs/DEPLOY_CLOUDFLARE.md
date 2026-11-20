@@ -239,7 +239,7 @@ cloudflared tunnel --url http://localhost:3000
 1. **免费计划配额**：Workers 每天 10 万请求；Durable Object 在房间有连接期间计 duration。几个人一起看电影完全够，几十人长期挂机需要升 Workers Paid（约 $5/月）。
 2. **房间状态在 DO 内存里**：最后一个人离开后 DO 会被回收，下次进同一房间是干净的初始状态（和现在 Express 版行为一致）。要保留聊天/播放进度，后续加 `ctx.storage` 持久化即可。
 3. **语音是 P2P WebRTC**：信令走我们的 WebSocket，音视频流不经过 Cloudflare。项目里没配 TURN 服务器，双方都在对称 NAT / 企业网下可能连不上——这是现有实现的限制，与部署无关。要稳定就加个 TURN（Cloudflare Calls 或自建 coturn）。
-4. **Google 登录要加白名单**：Firebase Auth 只放行授权域名。要用登录功能，去 Firebase 控制台 → Authentication → Settings → Authorized domains，加上 `kokospace.<子域>.workers.dev`。不加也能进房间（游客身份 + localStorage 形象）。
+4. **没有账号体系**：形象、场景方案、点播记录都在各自浏览器的 localStorage 里，换设备不同步。原来那套 Firebase Auth（Google 登录）已移除——Google 在大陆不可达，登录按钮等于废纸。
 5. **回滚**：`npx wrangler rollback` 回到上一个版本，或在 Dashboard → Workers → Deployments 里点回退。
 6. **首次部署会创建 DO 迁移**：`wrangler.jsonc` 里 `migrations` 已经声明 `new_sqlite_classes`（免费计划只能用 SQLite 版 DO）。改类名/删类名要新增 migration tag，别复用旧 tag。
 
