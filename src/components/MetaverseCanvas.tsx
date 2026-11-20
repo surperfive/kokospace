@@ -1140,11 +1140,77 @@ function drawFlatVectorMap(
   }
 }
 
+/**
+ * 像素画框的图片缓存：dataURL 本身就在 furniture 里，按 URL 建一张离屏图，
+ * 加载完成后主循环（每帧重绘）下一帧就能画出来，不用额外的重渲染。
+ */
+const artImageCache = new Map<string, HTMLImageElement>();
+
+function getArtImage(src: string): HTMLImageElement | null {
+  const cached = artImageCache.get(src);
+  if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+  const img = new Image();
+  img.src = src;
+  artImageCache.set(src, img);
+  return null;
+}
+
 function drawFurnitureItem(ctx: CanvasRenderingContext2D, item: FurnitureItem) {
   ctx.save();
   ctx.translate(item.x, item.y);
 
   switch (item.type) {
+    /**
+     * 墙面像素画：画框底边压在 (x, y) 上，往上长 56px。
+     * 画本身按最近邻放大，保持像素颗粒感。
+     */
+    case 'art_frame': {
+      // 画本身是 32×32，按 64 画（正好 2 倍）保持像素颗粒干净
+      const w = 72;
+      const h = 72;
+      const left = -w / 2;
+      const top = -h - 10;
+
+      // 挂绳
+      ctx.strokeStyle = 'rgba(24,24,27,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(left + 16, top);
+      ctx.lineTo(0, top - 9);
+      ctx.lineTo(left + w - 16, top);
+      ctx.stroke();
+
+      // 阴影
+      ctx.fillStyle = 'rgba(24, 24, 27, 0.14)';
+      ctx.beginPath();
+      ctx.roundRect(left + 3, top + 4, w, h, 4);
+      ctx.fill();
+
+      // 木框
+      ctx.fillStyle = '#8B5E3C';
+      ctx.strokeStyle = '#18181B';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.roundRect(left, top, w, h, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // 内白卡纸
+      ctx.fillStyle = '#FAF7F2';
+      ctx.fillRect(left + 2, top + 2, w - 4, h - 4);
+
+      const img = item.art ? getArtImage(item.art) : null;
+      if (img) {
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, left + 4, top + 4, 64, 64);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = 'rgba(24,24,27,0.08)';
+        ctx.fillRect(left + 4, top + 4, 64, 64);
+      }
+      break;
+    }
     case 'rug_geo': {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
       ctx.strokeStyle = 'rgba(24, 24, 27, 0.08)';

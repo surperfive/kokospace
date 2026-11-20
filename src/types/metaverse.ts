@@ -24,7 +24,9 @@ export type FurnitureType =
   | 'plant_fern'
   | 'lamp_warm'
   | 'table_round'
-  | 'rug_geo';
+  | 'rug_geo'
+  /** 挂在墙上的像素画框：art 里是 32×32 PNG 的 dataURL */
+  | 'art_frame';
 
 export interface FurnitureItem {
   id: string;
@@ -34,6 +36,8 @@ export interface FurnitureItem {
   rotation?: number;
   sittable?: boolean;
   label?: string;
+  /** art_frame 专用：画作 PNG dataURL（本地画板导出，约 1KB） */
+  art?: string;
 }
 
 export interface MapZone {

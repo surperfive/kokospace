@@ -110,3 +110,29 @@ npm run lint
 npm run build
 npm run start
 ```
+
+---
+
+## 6. 像素画板与开源引用
+
+房间里的挂画来自内置画板 `src/components/PixelArtStudio.tsx`：铅笔 / 橡皮 / 油漆桶 / 吸管、
+16·24·32 三档网格、对称绘制、撤销重做，导出 32×32 PNG dataURL。
+
+挂画的数据形态：`FurnitureItem { type: 'art_frame', art: <PNG dataURL>, label: '像素画' }`，
+跟着 `scene:update` 一起广播（一张画约 300~800 字节，塞进 furniture 完全不占带宽），
+`MetaverseCanvas` 里按 URL 缓存成 `<img>` 再最近邻放大到 64×64 画到世界画布上。
+
+### 参考的开源项目
+
+| 项目 | 许可 | 用到了什么 |
+| --- | --- | --- |
+| [Piskel](https://github.com/piskelapp/piskel) (13k★) | Apache-2.0 | 交互骨架：铅笔/橡皮/油漆桶/取色、网格、**左右对称绘制**、撤销栈 |
+| [dotting](https://github.com/hunkim98/dotting) | MIT | 参考了 React 侧的画布受控封装与 pointer 事件坐标换算写法 |
+| [pixel-art-react](https://github.com/jvalen/pixel-art-react) (6k★) | MIT | 参考了导出 PNG 的缩放策略（`image-rendering: pixelated` + 最近邻） |
+| [Sweetie 16](https://lospec.com/palette-list/sweetie-16) | CC0 | 默认调色板（GrafxKid） |
+| PICO-8 | 调色板公开 | 备选调色板 |
+
+**没有直接把这些库作为依赖引入**：Piskel / pixel-art-react 是整站应用（无法当组件嵌入），
+dotting 会带进自己的画布样式与交互，改造成本高于按同样的骨架重写一版。上表只是设计来源，代码是独立实现。
+另有一个 `pixel-dust` 也看过，但仓库**没有 LICENSE 文件**（GitHub 识别不到许可），不能引用，已排除。
+

@@ -697,13 +697,14 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
       // 退出房间，只让他一个人上报会让整屋人永远停在片尾。现在任何人在前台看着
       // 都能上报，服务端按「已播到 90%」校验 + expectedItemId 去重。
       // 4 秒节流是为了服务端拒绝时（时钟偏差）还能重试，而不是发一次就死心。
-      if (
-        isBilibili &&
-        !isLiveStream &&
-        videoState.isPlaying &&
-        activeDur > 5 &&
-        t >= activeDur
-      ) {
+      //
+      // 也不限定 isPlaying：暂停时 getExpectedTime() 返回的是 currentTime 而不是外推值，
+      // 它若已经贴在片尾，说明是「播完停住」而不是「暂停在中间」。这种状态以前会被
+      // 整段跳过，房间永远停在最后一帧。暂停时多等 3 秒，给「想重看」的人留余地。
+      const biliAtTail = activeDur > 5 && t >= activeDur - 0.5;
+      const biliHoldOk =
+        videoState.isPlaying || Date.now() - videoState.updatedAtMs > 3000;
+      if (isBilibili && !isLiveStream && biliAtTail && biliHoldOk) {
         const endKey = `${item.id}:${videoState.updatedAtMs}`;
         const nowMs = Date.now();
         const retryDue = nowMs - lastEndedSentAtRef.current > 4000;
@@ -1615,7 +1616,14 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
               aria-label="B 站对齐时间轴"
               title="B 站播放器不可控：拖到目标时间点，再点右侧「对齐所有人」"
             />
-            <span className="font-mono tabular-nums text-[10px] text-zinc-300 shrink-0">
+            <span
+              className="font-mono tabular-nums text-[10px] text-zinc-300 shrink-0"
+              title={
+                item.durationSec && item.durationSec > 0
+                  ? undefined
+                  : '没拿到这部片的时长：播完不会自动跳下一部，请手动点「跳过」'
+              }
+            >
               {formatSec(biliDraft ?? displayTime)} /{' '}
               {item.durationSec && item.durationSec > 0 ? formatSec(item.durationSec) : '--:--'}
             </span>
@@ -1636,6 +1644,18 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             >
               对齐所有人
             </button>
+            {/* 兜底：万一这条链接没解析出时长（Worker 被 B 站 412、JSONP 又超时），
+                播完就不会自动跳，至少留一个一键跳过的出口，别让人干等着 */}
+            {onSkipNext && canSkip && (
+              <button
+                type="button"
+                onClick={onSkipNext}
+                className="px-2 py-0.5 rounded text-[10px] font-medium shrink-0 bg-white/10 hover:bg-white/20 text-zinc-200 cursor-pointer transition-colors"
+                title="直接切到队列下一部"
+              >
+                跳过
+              </button>
+            )}
           </div>
         )}
       </div>

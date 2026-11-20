@@ -937,18 +937,39 @@ export class RoomCore {
   tick(now: number): Outbound[] {
     const vs = this.videoState;
     // 房间空了就停：否则待机轮播会在没人看的时候空转，白白写状态
-    if (this.players.size === 0 || !vs.isPlaying) return [];
+    if (this.players.size === 0) return [];
     const dur = vs.currentItem.durationSec;
     if (!dur || dur <= 5) return [];
     // 注意不能用 computeAuthoritativeVideoTime：内置短片在那里按 dur 取模，
     // 永远不会 >= dur，看门狗就永远触发不了。
     const elapsed = vs.currentTime + Math.max(0, (now - vs.updatedAtMs) / 1000);
-    // 两个条件任一满足就推进：
+    // 三个条件任一满足就推进：
     //   1) 按房间时钟已经播过片尾 + 3 秒宽限（正常情况下走这条）
     //   2) 上报的进度本身已经贴在片尾
+    //   3) 状态是「暂停」但进度贴在片尾，且已经停了 3 秒以上
     // 第 2 条是给「控片人一直在前台、每 2 秒上报一次 progress」兜底的：
     // 每次上报都会刷新 updatedAtMs，elapsed 被永远钉在 dur 上，只看第 1 条会饿死。
+    //
+    // 第 3 条是最后一道保险：以前这里第一行就 `!vs.isPlaying → return []`，
+    // 只要状态被写成暂停（比如某端在片尾点了一下暂停、或者播完那一刻被标成暂停），
+    // 看门狗就整段跳过，整屋人永远停在最后一帧。现在暂停在片尾同样会推进，
+    // 只是多等 3 秒，给「想重看一遍」的人留反应时间。
     const stuckAtEnd = dur > 0 && vs.currentTime >= dur - 0.5;
+    if (!vs.isPlaying) {
+      if (!stuckAtEnd || now - vs.updatedAtMs < 3000) return [];
+      this.advanceToNextItem('', now);
+      return [
+        {
+          kind: 'all',
+          payload: {
+            type: 'video:synced',
+            videoState: vs,
+            serverTimeMs: now,
+            silent: true,
+          },
+        },
+      ];
+    }
     if (elapsed < dur + AUTO_ADVANCE_GRACE_SEC && !stuckAtEnd) return [];
 
     this.advanceToNextItem('', now);

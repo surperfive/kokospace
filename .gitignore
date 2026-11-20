@@ -16,6 +16,8 @@ _scratch/
 # 本地联调临时产物（无头 Chrome 配置目录、验证截图、一次性脚本）
 _chrome*/
 _shot-*.png
+_shots*/
+_cdp-out*.json
 _*.mjs
 _*.ts
 

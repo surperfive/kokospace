@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Map, Armchair, HardDrive, Trash2, Check, Sparkles } from 'lucide-react';
+import { X, Map, Armchair, HardDrive, Trash2, Check, Sparkles, Palette } from 'lucide-react';
 import { FurnitureType, MapId, MapThemeDefinition } from '../types/metaverse';
 import type { LocalScenePreset } from '../lib/scenePresets';
 
@@ -18,6 +18,8 @@ interface SceneEditorModalProps {
   onSaveSceneLocal: (roomName: string) => Promise<void>;
   onLoadLocalScene: (preset: LocalScenePreset) => void;
   onDeleteLocalScene: (sceneId: string) => Promise<void>;
+  /** 打开像素画板（画完直接进画布编辑挂到墙上） */
+  onOpenPixelStudio: () => void;
 }
 
 const BRUSH_ITEMS: Array<{ type: FurnitureType | 'erase'; label: string }> = [
@@ -47,6 +49,7 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
   onSaveSceneLocal,
   onLoadLocalScene,
   onDeleteLocalScene,
+  onOpenPixelStudio,
 }) => {
   const [sceneName, setSceneName] = useState('我的专属影院布置');
   const [saving, setSaving] = useState(false);
@@ -175,6 +178,18 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
                 </button>
               ))}
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenPixelStudio();
+              }}
+              className="w-full px-3 py-2 rounded-xl bg-white border border-dashed border-zinc-300 text-[11px] font-medium text-zinc-600 hover:border-[#FF5A36] hover:text-[#FF5A36] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Palette className="w-3.5 h-3.5" />
+              像素画画板 · 画一张挂到墙上
+            </button>
           </section>
 
           {/* 本机场景方案（localStorage，无需登录） */}

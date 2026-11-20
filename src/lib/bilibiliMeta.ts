@@ -21,7 +21,7 @@ export { extractBvid } from './videoMeta';
 export function fetchBilibiliMetaJsonp(
   bvid: string,
   page = 1,
-  timeoutMs = 4000
+  timeoutMs = 6000
 ): Promise<BilibiliMeta | null> {
   return new Promise((resolve) => {
     if (typeof document === 'undefined' || !bvid) {

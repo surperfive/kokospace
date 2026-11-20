@@ -57,6 +57,7 @@ import { AvatarEditorModal } from './components/AvatarEditorModal';
 import { VideoQueueDrawer } from './components/VideoQueueDrawer';
 import { SceneEditorModal } from './components/SceneEditorModal';
 import { DeveloperDocsModal } from './components/DeveloperDocsModal';
+import { PixelArtStudio } from './components/PixelArtStudio';
 
 function getInitialRoomId(): string {
   const params = new URLSearchParams(window.location.search);
@@ -132,6 +133,9 @@ export default function App() {
   const [showQueueDrawer, setShowQueueDrawer] = useState(false);
   const [showSceneModal, setShowSceneModal] = useState(false);
   const [showDocsModal, setShowDocsModal] = useState(false);
+  const [showPixelStudio, setShowPixelStudio] = useState(false);
+  /** 画板导出后待挂的画（挂到墙上时塞进 furniture.art） */
+  const [pendingArt, setPendingArt] = useState<string | null>(null);
   const [showEmojiMenu, setShowEmojiMenu] = useState(false);
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -787,11 +791,16 @@ export default function App() {
         //
         // 放在这个 setInterval 里而不是只靠 rAF：标签页切后台时 rAF 会整个暂停，
         // setInterval 只是被节流（约每分钟一次），还能兜住最后一次。
+        //
+        // 暂停时用 currentTime 本身（不外加已播时间）：它若贴在片尾，说明是
+        // 「播完停住」而不是「暂停在中间」。暂停状态多等 3 秒再上报。
         const nowServer = Date.now() + serverOffsetRef.current;
         const elapsed = vs.isPlaying ? Math.max(0, (nowServer - vs.updatedAtMs) / 1000) : 0;
-        const t = vs.currentTime + elapsed;
+        const t = vs.isPlaying ? vs.currentTime + elapsed : vs.currentTime;
         const dur = vs.currentItem.durationSec;
-        if (vs.isPlaying && dur && dur > 5 && t >= dur) {
+        const atTail = !!dur && dur > 5 && t >= dur - 0.5;
+        const holdOk = vs.isPlaying || nowServer - vs.updatedAtMs > 3000;
+        if (atTail && holdOk) {
           sendGame(
             JSON.stringify({
               type: 'video:control',
@@ -1173,7 +1182,11 @@ export default function App() {
       (sourceType === 'bilibili' || !sourceType) &&
       (!durationSec || !resolvedTitle || /^Bilibili 视频\s*\(/i.test(resolvedTitle));
     if (needsBiliMeta && bvid) {
-      const meta = await fetchBilibiliMetaJsonp(bvid, extractBiliPage(input));
+      const biliPage = extractBiliPage(input);
+      // 第一次 5 秒，失败再给 5 秒：B 站这个接口偶尔会抖，
+      // 单次超时就放弃的话，时长缺失会让这部片播完永远停在最后一帧。
+      let meta = await fetchBilibiliMetaJsonp(bvid, biliPage, 5000);
+      if (!meta) meta = await fetchBilibiliMetaJsonp(bvid, biliPage, 5000);
       if (meta) {
         if (!durationSec && meta.durationSec) durationSec = meta.durationSec;
         // 用户手填的标题优先；服务端在 Worker 上只能给「Bilibili 视频 (BVxxx)」这种兜底标题，
@@ -1270,6 +1283,10 @@ export default function App() {
         showToast('单个房间最多摆放 40 件家具');
         return;
       }
+      if (selectedBrush === 'art_frame' && !pendingArt) {
+        showToast('先画一张，再点房间挂上去');
+        return;
+      }
       const sittable = ['sofa_coral', 'sofa_slate', 'beanbag_coral', 'beanbag_cream'].includes(
         selectedBrush
       );
@@ -1279,7 +1296,8 @@ export default function App() {
         x: Math.round(worldX),
         y: Math.round(worldY),
         sittable,
-        label: sittable ? '自定义座位' : undefined,
+        label: sittable ? '自定义座位' : selectedBrush === 'art_frame' ? '像素画' : undefined,
+        art: selectedBrush === 'art_frame' ? pendingArt ?? undefined : undefined,
       };
       updated = [...furniture, newItem];
     }
@@ -1292,8 +1310,16 @@ export default function App() {
     );
   };
 
-  const handleResetFurniture = () => {
-    const defaults = currentMapTheme.defaultFurniture;
+  /** 画板「挂到房间」：带着这张画进场景编辑，下一次点房间就把画框放到那儿 */
+  const handleHangArt = (dataUrl: string) => {
+    setPendingArt(dataUrl);
+    setShowPixelStudio(false);
+    setIsEditingScene(true);
+    setSelectedBrush('art_frame');
+    showToast('点一下房间的墙，把画挂上去');
+  };
+
+  const handleResetFurniture = () => {    const defaults = currentMapTheme.defaultFurniture;
     setFurniture(defaults);
     sendGame(
       JSON.stringify({
@@ -1419,6 +1445,13 @@ export default function App() {
             className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
           >
             地图与布置
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPixelStudio(true)}
+            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
+          >
+            像素画
           </button>
           <button
             type="button"
@@ -1772,6 +1805,12 @@ export default function App() {
       </main>
 
       {/* Modals & Drawers */}
+      <PixelArtStudio
+        open={showPixelStudio}
+        onClose={() => setShowPixelStudio(false)}
+        onHang={handleHangArt}
+      />
+
       <AvatarEditorModal
         isOpen={showAvatarModal}
         isInitialLobby={!hasEnteredRoom}
@@ -1824,6 +1863,7 @@ export default function App() {
         onSaveSceneLocal={handleSaveSceneLocal}
         onLoadLocalScene={handleLoadLocalScene}
         onDeleteLocalScene={handleDeleteLocalScene}
+        onOpenPixelStudio={() => setShowPixelStudio(true)}
       />
 
       <DeveloperDocsModal
