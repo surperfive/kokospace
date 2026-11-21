@@ -64,12 +64,6 @@ export interface RoomVideoItem {
 }
 
 /**
- * 跳过投票的通过票数。房主（及当前控片人）不需要投票，其他人凑够这个数就直接切下一部。
- * 客户端只用它做「1/2」这类展示，真正的判定在服务端。
- */
-export const SKIP_VOTE_THRESHOLD = 2;
-
-/**
  * 服务端看门狗在片尾后多等几秒再推进。
  * 留这点余量是给客户端自己的「播完」判定抢先用的：正常情况客户端先报，
  * 这里只在客户端彻底没反应（切后台、断网、页面崩了）时兜底。
@@ -132,13 +126,6 @@ export function distanceToScreen(
   return Math.hypot(nearestX - x, nearestY - y);
 }
 
-export interface RoomSkipVote {
-  /** 这轮投票属于哪一部；和 currentItem 不一致就当没投过 */
-  itemId: string;
-  voters: string[];
-  threshold: number;
-}
-
 export interface RoomVideoState {
   currentItem: RoomVideoItem;
   isPlaying: boolean;
@@ -150,8 +137,6 @@ export interface RoomVideoState {
   controllerName?: string;
   /** 当前放的是默认待机短片（还没人点播过）：此时点播直接开播 */
   isPlaceholder?: boolean;
-  /** 跳过投票：换片自动清空，重复投票等于撤销 */
-  skipVote?: RoomSkipVote | null;
 }
 
 export interface RoomChatMessage {
@@ -375,7 +360,6 @@ export class RoomCore {
       controllerId: null,
       controllerName: '',
       isPlaceholder: true,
-      skipVote: null,
     };
     this.chatHistory = [
       {
@@ -690,7 +674,6 @@ export class RoomCore {
         vs.isPlaying = true;
         vs.updatedAtMs = now;
         vs.isPlaceholder = false;
-        vs.skipVote = null;
         claimController();
       };
 
@@ -733,69 +716,12 @@ export class RoomCore {
         if (currentElapsed < endDur * 0.9) return [];
         this.advanceToNextItem(playerId, now);
       } else if (action === 'next') {
-        // 播完 / 手动跳过：控片人或房主可推进，不需要投票
-        if (!canAdvance()) return denyProgress();
+        // 播完 / 手动跳过：房间里谁都能推进，不用投票
         // 防多端同时上报导致连续跳两部
         if (typeof msg.expectedItemId === 'string' && msg.expectedItemId !== vs.currentItem.id) {
           return [];
         }
         this.advanceToNextItem(playerId, now);
-      } else if (action === 'vote_skip') {
-        // 跳过投票：谁都能投（房主/控片人直接走 next，不用在这绕一圈）。
-        // 票数跟着当前这一部走，换片即作废；重复点 = 撤销自己那一票。
-        if (typeof msg.expectedItemId === 'string' && msg.expectedItemId !== vs.currentItem.id) {
-          return [];
-        }
-        const itemId = vs.currentItem.id;
-        const prevVoters =
-          vs.skipVote && vs.skipVote.itemId === itemId ? vs.skipVote.voters : [];
-        // 投票期间有人退房：把已不在房间的 id 清掉，别让票数虚高
-        const voters = prevVoters.filter((id) => this.players.has(id));
-        const at = voters.indexOf(playerId);
-        const revoked = at >= 0;
-        if (revoked) voters.splice(at, 1);
-        else voters.push(playerId);
-
-        const threshold = SKIP_VOTE_THRESHOLD;
-        // 撤到 0 票就整个清掉，别在状态里留一条空票记录
-        vs.skipVote = voters.length ? { itemId, voters, threshold } : null;
-
-        const notices: Outbound[] = [];
-        const pushed = (text: string) => {
-          const chatMsg: RoomChatMessage = {
-            id: `msg_${now}_${Math.random().toString(36).slice(2, 6)}`,
-            playerId: 'system',
-            playerName: 'KokoSpace',
-            text,
-            isSystem: true,
-            createdAt: now,
-          };
-          this.chatHistory.push(chatMsg);
-          if (this.chatHistory.length > 40) this.chatHistory.shift();
-          notices.push({ kind: 'all', payload: { type: 'player:chat', message: chatMsg } });
-        };
-
-        if (voters.length >= threshold) {
-          const skippedTitle = vs.currentItem.title;
-          this.advanceToNextItem(playerId, now);
-          pushed(`投票通过（${threshold}/${threshold}），已跳过「${skippedTitle}」`);
-        } else if (revoked) {
-          pushed(`${me.name} 取消了跳过投票（${voters.length}/${threshold}）`);
-        } else {
-          pushed(`${me.name} 投票跳过当前影片（${voters.length}/${threshold}）`);
-        }
-        return [
-          {
-            kind: 'all',
-            payload: {
-              type: 'video:synced',
-              videoState: vs,
-              serverTimeMs: now,
-              triggeredBy: me.name,
-            },
-          },
-          ...notices,
-        ];
       } else if (action === 'select_item' && msg.item) {
         const item: RoomVideoItem = {
           id: String(msg.item.id || `vid_${now}`).slice(0, 64),
@@ -859,7 +785,6 @@ export class RoomCore {
               : playerId;
         vs.controllerId = ownerId;
         vs.controllerName = this.players.get(ownerId)?.name || target.addedBy || '';
-        vs.skipVote = null;
       } else if (action === 'remove_queue' && typeof msg.itemId === 'string') {
         const target = vs.queue.find((q) => q.id === msg.itemId);
         if (!target) return [];
@@ -1205,8 +1130,6 @@ export class RoomCore {
       vs.controllerId = null;
       vs.controllerName = '';
     }
-    // 换片即作废上一部的跳过投票
-    vs.skipVote = null;
   }
 
   /** 房主离开：清理 + 房主移交 + 广播 */
@@ -1282,16 +1205,6 @@ export class RoomCore {
       videoDirty = true;
     }
 
-    // 投票人走了：他那一票要撤掉，否则「2/2」会永远凑不满
-    const vote = this.videoState.skipVote;
-    if (vote && vote.voters.includes(playerId)) {
-      const voters = vote.voters.filter((id) => id !== playerId);
-      this.videoState.skipVote = voters.length
-        ? { ...vote, voters }
-        : null;
-      videoDirty = true;
-    }
-
     if (videoDirty) {
       out.push({
         kind: 'all',
@@ -1350,14 +1263,11 @@ export class RoomCore {
     }
     if (state.videoState && state.videoState.currentItem) {
       const restored = state.videoState;
-      const vote = restored.skipVote;
       this.videoState = {
         ...restored,
         updatedAtMs: Date.now(),
         // 旧存档没有这个字段：有控片人就说明确实点播过
         isPlaceholder: restored.isPlaceholder ?? !restored.controllerId,
-        // 存档里的票可能属于上一部，对不上就丢掉
-        skipVote: vote && vote.itemId === restored.currentItem.id ? vote : null,
       };
     }
     if (Array.isArray(state.chatHistory) && state.chatHistory.length) {

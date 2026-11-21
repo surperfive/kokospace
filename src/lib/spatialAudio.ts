@@ -36,6 +36,17 @@ export class SpatialAudioManager {
     this.localId = id;
   }
 
+  /**
+   * 切回前台时调用。移动端切后台会把 AudioContext 挂起，不 resume 的话
+   * 远端语音一直是哑的（麦克风还在采集，但听不到别人），而且不会自己恢复。
+   */
+  resume() {
+    if (!this.audioCtx) return;
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
+    }
+  }
+
   private ensureAudioContext(): AudioContext {
     if (!this.audioCtx) {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;

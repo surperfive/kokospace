@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Loader2,
   PictureInPicture2,
+  Palette,
 } from 'lucide-react';
 import {
   AvatarConfig,
@@ -41,7 +42,7 @@ import {
 import { pluginRegistry } from './lib/pluginRegistry';
 import { SpatialAudioManager } from './lib/spatialAudio';
 import { P2PRoom, isP2PEnabled } from './lib/p2pRoom';
-import { CARRY, SCREEN_CARRY_TARGET, SKIP_VOTE_THRESHOLD, extractBiliPage } from './lib/roomCore';
+import { CARRY, SCREEN_CARRY_TARGET, extractBiliPage } from './lib/roomCore';
 import { detectVideoLink } from './lib/videoLink';
 import { extractBvid, fetchBilibiliMetaJsonp } from './lib/bilibiliMeta';
 import {
@@ -200,25 +201,8 @@ export default function App() {
     return Boolean(videoState.isPlaceholder && q.length === 0);
   }, [videoState.queue, videoState.currentItem.id, videoState.isPlaceholder]);
 
-  const isLocalHost = useMemo(
-    () => Boolean(players.find((p) => p.id === localPlayerId)?.isHost),
-    [players, localPlayerId]
-  );
-  const canSkipVideo =
-    !videoState.controllerId || videoState.controllerId === localPlayerId || isLocalHost;
-
-  /**
-   * 跳过投票（和 canSkipVideo 互补）：
-   * 房主 / 控片人点一次就跳，其他人只能投票，凑够 2 票由服务端切下一部。
-   * 票只算当前这一部，换片自动归零。
-   */
-  const skipVote =
-    videoState.skipVote && videoState.skipVote.itemId === videoState.currentItem.id
-      ? videoState.skipVote
-      : null;
-  const skipVoteCount = skipVote?.voters.length || 0;
-  const skipVoteThreshold = skipVote?.threshold || SKIP_VOTE_THRESHOLD;
-  const hasVotedSkip = Boolean(skipVote?.voters.includes(localPlayerId));
+  /** 跳过不需要投票：房间里谁都能直接切下一部 */
+  const canSkipVideo = true;
 
   /** 聊天框里有没有可点播的视频链接：只用来给输入提示，真正点播在提交时做 */
   const chatVideoLink = useMemo(() => detectVideoLink(chatInput), [chatInput]);
@@ -272,7 +256,18 @@ export default function App() {
       }
     );
     audioMgrRef.current = mgr;
+
+    // 移动端切后台会挂起 AudioContext，回来时不会自己恢复 —— 不补这一下，
+    // 别人说话你就听不见了（自己说话别人还能听到，因为麦克风是另一条链路）。
+    const resumeAudio = () => {
+      if (document.visibilityState === 'visible') mgr.resume();
+    };
+    document.addEventListener('visibilitychange', resumeAudio);
+    window.addEventListener('pageshow', resumeAudio);
+
     return () => {
+      document.removeEventListener('visibilitychange', resumeAudio);
+      window.removeEventListener('pageshow', resumeAudio);
       mgr.destroy();
       audioMgrRef.current = null;
     };
@@ -1062,17 +1057,6 @@ export default function App() {
     );
   }, [sendGame]);
 
-  /** 投票跳过当前影片：再点一次 = 撤销自己的票；凑够票数由服务端直接切下一部 */
-  const handleVoteSkip = useCallback(() => {
-    sendGame(
-      JSON.stringify({
-        type: 'video:control',
-        action: 'vote_skip',
-        expectedItemId: videoStateRef.current.currentItem.id,
-      })
-    );
-  }, [sendGame]);
-
   /** 跳到队列中指定影片 */
   const handleJumpToItem = useCallback(
     (itemId: string) => {
@@ -1544,10 +1528,6 @@ export default function App() {
               !videoState.controllerId || videoState.controllerId === localPlayerId
             }
             canSkip={canSkipVideo}
-            skipVoteCount={skipVoteCount}
-            skipVoteThreshold={skipVoteThreshold}
-            hasVotedSkip={hasVotedSkip}
-            onVoteSkip={handleVoteSkip}
             skipStepSec={skipStepSec}
             autoSkipOutroSec={autoSkipOutroSec}
             onProximityUpdate={(count, stage) => {
@@ -1696,6 +1676,19 @@ export default function App() {
               <span className="hidden sm:inline">小窗</span>
             </button>
 
+            {/* Pixel Art Studio */}
+            <button
+              type="button"
+              onClick={() => setShowPixelStudio(true)}
+              className={`min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                showPixelStudio ? 'bg-zinc-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
+              }`}
+              title="像素画板：画完挂到墙上"
+            >
+              <Palette className="w-4 h-4" />
+              <span className="hidden sm:inline">像素画</span>
+            </button>
+
             {/* Mobile/Tablet Quick Feature Buttons (hidden on lg where top nav handles them) */}
             <button
               type="button"
@@ -1829,10 +1822,6 @@ export default function App() {
         isOpen={showQueueDrawer}
         videoState={videoState}
         canSkip={canSkipVideo}
-        skipVoteCount={skipVoteCount}
-        skipVoteThreshold={skipVoteThreshold}
-        hasVotedSkip={hasVotedSkip}
-        onVoteSkip={handleVoteSkip}
         skipStepSec={skipStepSec}
         autoSkipOutroSec={autoSkipOutroSec}
         history={watchHistory}

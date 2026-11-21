@@ -23,7 +23,7 @@ KokoSpace 是一个支持桌面端与移动端无缝联机的 2D 扁平矢量元
 | `room:init` | Server → Client | 下发完整房间状态（在线玩家、家具布局、权威视频进度、服务器时间） |
 | `player:move` / `player:moved` | 双向广播 | 同步玩家坐标 `(x, y)`、朝向 `dir`、移动态与落座状态 |
 | `video:control` / `video:synced` | 双向广播 | 同步中央巨幕播放、暂停、进度条拖拽及点播队列变更 |
-| `video:control action:'vote_skip'` | Client → Server | 跳过投票：`skipVote` 存在 `videoState` 里，满 `SKIP_VOTE_THRESHOLD`（2）票服务端直接切下一部，换片自动归零 |
+| `video:control action:'next'` | Client → Server | 跳过当前影片：**谁都能发，不需要投票**（`expectedItemId` 对不上会被丢弃，防多端连跳两部） |
 | `player:reaction` | 双向广播 | 触发人物头顶浮动表情包或近距离互动动作 |
 | `player:chat` | 双向广播 | 发送空间头顶聊天气泡与聊天面板消息 |
 | `scene:update` / `scene:updated` | 双向广播 | 切换地图主题或实时增删改地图家具 |

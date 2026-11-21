@@ -282,15 +282,26 @@ export const PixelArtStudio: React.FC<PixelArtStudioProps> = ({ open, onClose, o
     []
   );
 
-  // Ctrl/Cmd + Z 撤销，Shift 加回去重做
+  // Z 撤销、Shift+Z 重做（Ctrl/Cmd+Z 也照旧）；Ctrl+Y 走 Windows 习惯
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.key.toLowerCase() !== 'z') return;
-      e.preventDefault();
-      if (e.shiftKey) handleRedo();
-      else handleUndo();
+      const target = e.target as HTMLElement | null;
+      // 正在输入作品名时不要抢键，否则打不出字母 z
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -391,7 +402,7 @@ export const PixelArtStudio: React.FC<PixelArtStudioProps> = ({ open, onClose, o
                 onClick={handleUndo}
                 disabled={!past.length}
                 className="p-1.5 rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 cursor-pointer"
-                title="撤销 (Ctrl+Z)"
+                title="撤销（Z 或 Ctrl+Z）"
               >
                 <Undo2 className="w-3.5 h-3.5" />
               </button>
@@ -400,7 +411,7 @@ export const PixelArtStudio: React.FC<PixelArtStudioProps> = ({ open, onClose, o
                 onClick={handleRedo}
                 disabled={!future.length}
                 className="p-1.5 rounded-lg text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 cursor-pointer"
-                title="重做 (Ctrl+Shift+Z)"
+                title="重做（Shift+Z 或 Ctrl+Shift+Z）"
               >
                 <Redo2 className="w-3.5 h-3.5" />
               </button>
@@ -552,6 +563,7 @@ export const PixelArtStudio: React.FC<PixelArtStudioProps> = ({ open, onClose, o
               <div className="text-[11px] font-medium text-zinc-700">怎么画</div>
               <ul className="text-[10px] leading-relaxed text-zinc-500 space-y-0.5">
                 <li>· 按住左键拖动连续落笔，橡皮擦掉；「对称」开着会左右同时画</li>
+                <li>· 快捷键：Z 撤销、Shift+Z 重做（Ctrl+Z 也行）</li>
                 <li>· 吸管可以取画布上已有的颜色，油漆桶填同一色的连通区域</li>
                 <li>· 画完点「挂到房间里」，再点房间的墙就挂上去了，所有人可见</li>
                 <li>· 挂上去的画存在本机「我的画作」里，随时点回来继续改</li>

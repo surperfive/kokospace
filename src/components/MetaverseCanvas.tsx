@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AvatarConfig,
   FloatingReaction,
@@ -80,11 +80,6 @@ interface MetaverseCanvasProps {
   /** 当前用户是否是点播人（不是就只能看） */
   canControlProgress?: boolean;
   canSkip?: boolean;
-  /** 跳过投票：当前这一部已投人数 / 通过票数 / 自己是否已投 */
-  skipVoteCount?: number;
-  skipVoteThreshold?: number;
-  hasVotedSkip?: boolean;
-  onVoteSkip?: () => void;
   skipStepSec?: number;
   autoSkipOutroSec?: number;
   onProximityUpdate?: (nearbyCount: number, inStageZone: boolean) => void;
@@ -122,10 +117,6 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   onSkipNext,
   canControlProgress = true,
   canSkip = canControlProgress,
-  skipVoteCount = 0,
-  skipVoteThreshold = 2,
-  hasVotedSkip = false,
-  onVoteSkip,
   skipStepSec = 30,
   autoSkipOutroSec = 0,
   onProximityUpdate,
@@ -894,10 +885,6 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         onSkipNext={onSkipNext}
         canControlProgress={canControlProgress}
         canSkip={canSkip}
-        skipVoteCount={skipVoteCount}
-        skipVoteThreshold={skipVoteThreshold}
-        hasVotedSkip={hasVotedSkip}
-        onVoteSkip={onVoteSkip}
         skipStepSec={skipStepSec}
         autoSkipOutroSec={autoSkipOutroSec}
         activeWidgets={activeWidgets}
@@ -929,10 +916,6 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           onSkipNext={onSkipNext}
           canControlProgress={canControlProgress}
           canSkip={canSkip}
-          skipVoteCount={skipVoteCount}
-          skipVoteThreshold={skipVoteThreshold}
-          hasVotedSkip={hasVotedSkip}
-          onVoteSkip={onVoteSkip}
           skipStepSec={skipStepSec}
           autoSkipOutroSec={autoSkipOutroSec}
           activeWidgets={[]}

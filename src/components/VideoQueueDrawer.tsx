@@ -18,11 +18,6 @@ interface VideoQueueDrawerProps {
   isOpen: boolean;
   videoState: VideoState;
   canSkip: boolean;
-  /** 跳过投票：已投人数 / 通过票数 / 自己是否已投 */
-  skipVoteCount: number;
-  skipVoteThreshold: number;
-  hasVotedSkip: boolean;
-  onVoteSkip: () => void;
   skipStepSec: number;
   autoSkipOutroSec: number;
   history: WatchHistoryItem[];
@@ -62,10 +57,6 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
   isOpen,
   videoState,
   canSkip,
-  skipVoteCount,
-  skipVoteThreshold,
-  hasVotedSkip,
-  onVoteSkip,
   skipStepSec,
   autoSkipOutroSec,
   history,
@@ -195,7 +186,7 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
                 <SlidersHorizontal className="w-3.5 h-3.5 text-[#FF5A36]" />
                 <span>跳过选项</span>
               </div>
-              {canSkip ? (
+              {canSkip && (
                 <button
                   type="button"
                   onClick={onSkipCurrent}
@@ -204,32 +195,11 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
                   <SkipForward className="w-3 h-3" />
                   <span>跳过当前影片</span>
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onVoteSkip}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer tabular-nums transition-colors ${
-                    hasVotedSkip
-                      ? 'bg-amber-400 text-zinc-900 hover:bg-amber-300'
-                      : 'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'
-                  }`}
-                  title={
-                    hasVotedSkip
-                      ? '你已投票，再点一次撤销'
-                      : `投票跳过当前影片，满 ${skipVoteThreshold} 票自动切下一部`
-                  }
-                >
-                  <SkipForward className="w-3 h-3" />
-                  <span>
-                    {hasVotedSkip ? '已投' : '投票'}
-                    {skipVoteCount > 0 ? ` ${skipVoteCount}/${skipVoteThreshold}` : ''}
-                  </span>
-                </button>
               )}
             </div>
 
             <p className="text-[11px] text-zinc-500 leading-relaxed">
-              房主与当前点播人可直接跳过；其他人投票，满 {skipVoteThreshold} 票自动切下一部。
+              跳过不需要投票，房间里谁都能直接切下一部。
             </p>
 
             <div>
@@ -327,7 +297,7 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
                       </div>
                     </div>
                     {isActive ? (
-                      canSkip ? (
+                      canSkip && (
                         <button
                           type="button"
                           onClick={onSkipCurrent}
@@ -336,27 +306,6 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
                         >
                           <SkipForward className="w-3 h-3" />
                           <span>跳过</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={onVoteSkip}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0 tabular-nums transition-colors ${
-                            hasVotedSkip
-                              ? 'bg-amber-400 text-zinc-900 hover:bg-amber-300'
-                              : 'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'
-                          }`}
-                          title={
-                            hasVotedSkip
-                              ? '你已投票，再点一次撤销'
-                              : `投票跳过，满 ${skipVoteThreshold} 票自动切下一部`
-                          }
-                        >
-                          <SkipForward className="w-3 h-3" />
-                          <span>
-                            {hasVotedSkip ? '已投' : '投票'}
-                            {skipVoteCount > 0 ? ` ${skipVoteCount}/${skipVoteThreshold}` : ''}
-                          </span>
                         </button>
                       )
                     ) : (

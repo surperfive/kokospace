@@ -44,13 +44,8 @@ interface CentralCinemaScreenProps {
   onVideoControl: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
   /** 当前用户是否是点播人：不是就只能看，进度条与播放键禁用 */
   canControlProgress?: boolean;
-  /** 是否允许跳过当前影片（点播人或房主） */
+  /** 是否允许跳过当前影片（现在谁都可以） */
   canSkip?: boolean;
-  /** 跳过投票：已投人数 / 通过票数 / 自己是否已投（不能直接跳过的人才走这里） */
-  skipVoteCount?: number;
-  skipVoteThreshold?: number;
-  hasVotedSkip?: boolean;
-  onVoteSkip?: () => void;
   /** 快进跳过步长（秒） */
   skipStepSec?: number;
   /** 自动跳过片尾（剩余秒数 <= 该值时切下一部，0 表示关闭） */
@@ -85,10 +80,6 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onVideoControl,
   canControlProgress = true,
   canSkip = canControlProgress,
-  skipVoteCount = 0,
-  skipVoteThreshold = 2,
-  hasVotedSkip = false,
-  onVoteSkip,
   skipStepSec = 30,
   autoSkipOutroSec = 0,
   onPlaybackTime,
@@ -112,7 +103,12 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   /** 房间在播、本地却被浏览器拦下：超过几秒仍没动就露出「点一下」兜底 */
   const [localStuck, setLocalStuck] = useState(false);
   const [volume, setVolume] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('koko_cinema_volume'));
+    // 坑：没存过时 getItem 返回 null，而 Number(null) 是 0 不是 NaN。
+    // 原来直接把 Number(...) 交给 Number.isFinite 判断，新访客会被当成「存过 0」，
+    // 于是一进房间音量就是 0 —— 画面在播、muted 也是 false，但一点声音都没有。
+    const raw = localStorage.getItem('koko_cinema_volume');
+    if (raw == null || raw === '') return 0.8;
+    const saved = Number(raw);
     return Number.isFinite(saved) && saved >= 0 && saved <= 1 ? saved : 0.8;
   });
   const [displayTime, setDisplayTime] = useState(0);
@@ -152,6 +148,8 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onPlaybackTimeRef.current = onPlaybackTime;
   const onMediaEndedRef = useRef(onMediaEnded);
   onMediaEndedRef.current = onMediaEnded;
+  const onVideoControlRef = useRef(onVideoControl);
+  onVideoControlRef.current = onVideoControl;
   /** 内置短片是循环动画，用"时间回绕"或到达时长判断跑完一轮 */
   const prevBuiltinTimeRef = useRef<number | null>(null);
   const builtinItemRef = useRef<string>('');
@@ -372,6 +370,105 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
     el.volume = volume;
     el.muted = muted;
   }, [volume, muted, isVideoStream, item.id, retryNonce]);
+
+  /**
+   * 后台播放：把这一页登记成一个「正在播放的媒体会话」。
+   *
+   * 桌面浏览器本来就不会因为切标签页而暂停 <video>（实测切后台 5 秒 currentTime 照样推进），
+   * 但没有 MediaSession 时，Android 和部分桌面浏览器不会把它当媒体处理 ——
+   * 后台不显示媒体通知、锁屏和耳机按键也控制不了，系统更容易把标签页冻结掉。
+   * 注册之后，切到别的网页/别的 App，声音继续，还能用系统媒体面板暂停、快进。
+   */
+  useEffect(() => {
+    if (silent || !isVideoStream) return;
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+
+    try {
+      ms.metadata = new MediaMetadata({
+        title: item.title || 'KokoSpace',
+        artist: 'KokoSpace 共看影院',
+        album: 'KokoSpace',
+        artwork: item.thumbnail ? [{ src: item.thumbnail, sizes: '512x512' }] : [],
+      });
+    } catch {
+      /* 老浏览器没有 MediaMetadata 构造函数，忽略 */
+    }
+
+    const set = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        /* 该浏览器不支持这个动作 */
+      }
+    };
+
+    set('play', () => onVideoControlRef.current('play'));
+    set('pause', () => onVideoControlRef.current('pause'));
+    set('seekbackward', () => {
+      const el = videoRef.current;
+      if (el && Number.isFinite(el.currentTime)) {
+        onVideoControlRef.current('seek', Math.max(0, el.currentTime - 10));
+      }
+    });
+    set('seekforward', () => {
+      const el = videoRef.current;
+      if (el && Number.isFinite(el.currentTime)) {
+        onVideoControlRef.current('seek', el.currentTime + 10);
+      }
+    });
+    set('seekto', (details) => {
+      if (typeof details.seekTime === 'number') {
+        onVideoControlRef.current('seek', details.seekTime);
+      }
+    });
+    set('nexttrack', onSkipNext ? () => onSkipNext() : null);
+
+    return () => {
+      for (const a of ['play', 'pause', 'seekbackward', 'seekforward', 'seekto', 'nexttrack'] as MediaSessionAction[]) {
+        set(a, null);
+      }
+    };
+  }, [isVideoStream, silent, item.id, item.title, item.thumbnail, onSkipNext]);
+
+  // 系统媒体面板上的播放/暂停按钮要跟着房间状态走
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = videoState.isPlaying ? 'playing' : 'paused';
+    } catch {
+      /* 忽略 */
+    }
+  }, [videoState.isPlaying]);
+
+  /**
+   * 切回前台时把播放状态重新压回元素上。
+   *
+   * 移动端（尤其 iOS）切到后台会把整个页面挂起，回来时元素停在 paused；
+   * 部分浏览器还会在后台把音量/静音重置成默认值。这里只在「房间在播、元素却没动」
+   * 时才补一次 play()，不会打断用户主动暂停。
+   */
+  useEffect(() => {
+    if (silent || !isVideoStream) return;
+    const heal = () => {
+      if (document.visibilityState === 'hidden') return;
+      const el = videoRef.current;
+      if (!el) return;
+      el.volume = volume;
+      el.muted = muted;
+      if (videoState.isPlaying && el.paused && !el.ended) {
+        el.play().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', heal);
+    window.addEventListener('pageshow', heal);
+    window.addEventListener('focus', heal);
+    return () => {
+      document.removeEventListener('visibilitychange', heal);
+      window.removeEventListener('pageshow', heal);
+      window.removeEventListener('focus', heal);
+    };
+  }, [isVideoStream, silent, videoState.isPlaying, volume, muted]);
 
   // 点播人上报真实播放位置（mp4 / hls）：seek 中 / 未就绪 / 直播流时不上报
   useEffect(() => {
@@ -1031,41 +1128,15 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                 <span className="hidden sm:inline">点播单</span>
               </button>
             )}
-            {canSkip ? (
-              (hasNext || !videoState.isPlaceholder) && (
-                <button
-                  type="button"
-                  onClick={() => onSkipNext?.()}
-                  className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                  title={hasNext ? '跳过当前，播放下一部' : '跳过当前点播视频'}
-                >
-                  <SkipForward className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">跳过</span>
-                </button>
-              )
-            ) : (
-              // 不是房主/控片人：只能投票，满 2 票服务端直接切下一部
+            {canSkip && (hasNext || !videoState.isPlaceholder) && (
               <button
                 type="button"
-                onClick={() => onVoteSkip?.()}
-                className={`px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer tabular-nums ${
-                  hasVotedSkip
-                    ? 'bg-amber-400 text-zinc-900 hover:bg-amber-300'
-                    : 'bg-white/10 hover:bg-white/20 text-white'
-                }`}
-                title={
-                  hasVotedSkip
-                    ? `你已投票（${skipVoteCount}/${skipVoteThreshold}），再点一次撤销`
-                    : `投票跳过当前影片，满 ${skipVoteThreshold} 票自动切下一部（当前 ${skipVoteCount}/${skipVoteThreshold}）`
-                }
+                onClick={() => onSkipNext?.()}
+                className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                title={hasNext ? '跳过当前，播放下一部' : '跳过当前点播视频'}
               >
                 <SkipForward className="w-3.5 h-3.5" />
-                <span>{hasVotedSkip ? '已投' : '投票'}</span>
-                {skipVoteCount > 0 && (
-                  <span className="text-[10px] opacity-75">
-                    {skipVoteCount}/{skipVoteThreshold}
-                  </span>
-                )}
+                <span className="hidden sm:inline">跳过</span>
               </button>
             )}
             {isMini ? (
@@ -1291,12 +1362,12 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => (canSkip ? onSkipNext?.() : onVoteSkip?.())}
+                  onClick={() => onSkipNext?.()}
                   className="px-1.5 py-0.5 rounded bg-[#FF5A36] text-white text-[10px] flex items-center gap-1 cursor-pointer"
-                  title={canSkip ? '跳过此片' : `投票跳过 ${skipVoteCount}/${skipVoteThreshold}`}
+                  title="跳过此片"
                 >
                   <SkipForward className="w-3 h-3" />
-                  {canSkip ? '跳过' : `投票 ${skipVoteCount}/${skipVoteThreshold}`}
+                  跳过
                 </button>
               </div>
             </div>
@@ -1321,33 +1392,14 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>重试加载</span>
                 </button>
-                {canSkip ? (
-                  onSkipNext && (
-                    <button
-                      type="button"
-                      onClick={onSkipNext}
-                      className="px-3 py-1.5 rounded-lg bg-[#FF5A36] hover:bg-[#E84B28] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <SkipForward className="w-3.5 h-3.5" />
-                      <span>跳过此片</span>
-                    </button>
-                  )
-                ) : (
+                {onSkipNext && (
                   <button
                     type="button"
-                    onClick={() => onVoteSkip?.()}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer tabular-nums ${
-                      hasVotedSkip
-                        ? 'bg-amber-400 text-zinc-900 hover:bg-amber-300'
-                        : 'bg-white/15 hover:bg-white/25 text-white'
-                    }`}
-                    title={`投票跳过，满 ${skipVoteThreshold} 票自动切下一部`}
+                    onClick={onSkipNext}
+                    className="px-3 py-1.5 rounded-lg bg-[#FF5A36] hover:bg-[#E84B28] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                   >
                     <SkipForward className="w-3.5 h-3.5" />
-                    <span>{hasVotedSkip ? '已投' : '投票跳过'}</span>
-                    <span className="opacity-70">
-                      {skipVoteCount}/{skipVoteThreshold}
-                    </span>
+                    <span>跳过此片</span>
                   </button>
                 )}
               </div>
