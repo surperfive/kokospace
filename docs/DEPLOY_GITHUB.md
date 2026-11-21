@@ -45,10 +45,70 @@ Cloudflare Workers（前端静态资源 + Durable Object 房间）  ← 访问�
 
 ### 2. 建一个 Cloudflare API Token
 
-Dashboard → 右上头像 → **My Profile → API Tokens → Create Token** →
-选模板 **「Edit Cloudflare Workers」** → Continue → Create → 复制那串 token（只显示一次）。
+**为什么要 Token 而不是 `wrangler login`**：登录拿到的是 OAuth 凭证，大约 3 小时就过期，
+刷新时还要连 `dash.cloudflare.com`（国内经常连不上），结果就是每部署一次都要在浏览器点一次
+「Allow」。API Token 不会过期，本地和 CI 都能用同一串。
 
-这个 token 权限是：Workers Scripts 读写 + Account 只读 + Zone 读取，够用且不过度。
+打开 <https://dash.cloudflare.com/profile/api-tokens>（或 Dashboard 右上头像 → **My Profile** → 左侧 **API Tokens**）。
+
+1. 点 **Create Token**。
+2. 找到模板 **Edit Cloudflare Workers**，点右边的 **Use template**。
+3. 按下面填：
+
+   | 字段 | 填什么 |
+   | --- | --- |
+   | **Token name** | `kokospace-deploy`（随便起，方便以后认） |
+   | **Permissions** | 模板默认给的够用：`Account → Workers Scripts: Edit` 是核心（Durable Object 和静态资源都归它管） |
+   | **Account Resources** | `Include` → 选你自己的账号 |
+   | **Zone Resources** | 见下面的坑 |
+   | **TTL** | 留空（永不过期），或设个很长的日期 |
+
+   > ⚠️ **最容易卡住的地方**：模板会自带一条 `Zone → Workers Routes: Edit` 的权限，
+   > 而 Zone Resources 默认是「Specific zone」却没选具体域名 —— 页面会标红
+   > `Choose a zone resource`，底部的 **Create Token** 按钮点不动。
+   > 这个项目只部署到 `*.workers.dev`，**把整条 Zone 权限删掉**（行尾的垃圾桶图标）就能继续。
+   > 如果以后绑了自定义域名（比如 `kokospace.de5.net`），保留这条并选中那个域名。
+
+4. 点 **Continue to summary** → **Create Token**。
+5. **立刻复制**那串 token（`Continue to summary` 之后只显示这一次，关掉就再也看不到了）。
+
+> 如果部署时 wrangler 报 Durable Object 相关的权限错误，回到这个 token 点 **Edit**，
+> 加一条 `Account → Durable Objects: Edit` 再保存。
+
+### 2.5 本地也用这串 token（可选，但强烈建议）
+
+不配的话，本地 `npx wrangler deploy` 会走 OAuth，三小时过期一次。配好之后本地和 CI 用同一串，
+`wrangler deploy` 直接生效，不再弹浏览器。
+
+**Windows（PowerShell 或 CMD，二选一跑一次就行）**
+
+```powershell
+setx CLOUDFLARE_API_TOKEN "把刚才复制的 token 粘这里"
+```
+
+`setx` 写的是**用户级环境变量**，只对**之后新开的**终端生效 —— 当前这个窗口里读不到，
+关掉重开一个再验证：
+
+```powershell
+npx wrangler whoami
+```
+
+能打印出账号名和 Account ID 就说明生效了。（`account_id` 已经写在 `wrangler.jsonc` 里，
+所以本地不需要再设 `CLOUDFLARE_ACCOUNT_ID`。）
+
+**macOS / Linux**
+
+```bash
+echo 'export CLOUDFLARE_API_TOKEN="把 token 粘这里"' >> ~/.zshrc   # 或 ~/.bashrc
+source ~/.zshrc
+npx wrangler whoami
+```
+
+**只想临时用一次**（不写进环境变量）：
+
+```bash
+CLOUDFLARE_API_TOKEN="xxx" npx wrangler deploy
+```
 
 ### 3. 把 token 存成仓库 Secret
 
@@ -115,6 +175,13 @@ Dashboard → Workers & Pages → `kokospace` → **Settings → Builds → Conn
 
 **Actions 报 Authentication error**
 → Secret 名字拼错（必须是 `CLOUDFLARE_API_TOKEN`），或 token 没给 Workers 权限（用「Edit Cloudflare Workers」模板）。
+
+**本地 `npx wrangler deploy` 老是要我在浏览器点 Allow，或者报 token expired**
+→ 那是 `wrangler login` 的 OAuth 凭证过期了（约 3 小时），跟 API Token 无关。报
+`could not be refreshed because the Cloudflare auth server could not be reached`
+说明 `dash.cloudflare.com` 根本连不上（国内常见），刷新必然失败。
+按上面「2.5 本地也用这串 token」设一个 `CLOUDFLARE_API_TOKEN` 环境变量，之后本地部署直接生效，
+不用再登录。
 
 **`Install dependencies` 和 `Build frontend` 都绿，只有 `Deploy worker + assets` 红**
 → 历史上这一步失败过三次（11-18 两次、11-20 一次），根因是 **API Token 失效**，不是代码问题。

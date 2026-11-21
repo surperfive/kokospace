@@ -1,6 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kokospace",
+  // Account ID 不是密钥（Dashboard 的地址栏里就有），写在这里本地部署就不用再设
+  // CLOUDFLARE_ACCOUNT_ID 环境变量。换账号时改这一行即可。
+  "account_id": "ce72297a5f7faac96aeb087d4ad1b77e",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],
