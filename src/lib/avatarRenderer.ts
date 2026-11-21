@@ -37,6 +37,10 @@ export interface DrawChibiOptions {
   timeMs: number;
   speakingLevel?: number;
   chatBubble?: string;
+  /** 气泡透明度：淡出时由调用方逐帧传入 */
+  chatBubbleAlpha?: number;
+  /** 气泡向上偏移：配合透明度做出「飘散」感 */
+  chatBubbleRise?: number;
   /** 被扛在肩上时：不画地面影子（影子会飘在半空） */
   hideShadow?: boolean;
   /** 被扛在肩上时：不画名字牌（会盖住扛人者的脸） */
@@ -59,6 +63,8 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
     timeMs,
     speakingLevel = 0,
     chatBubble,
+    chatBubbleAlpha = 1,
+    chatBubbleRise = 0,
     hideShadow = false,
     hideName = false,
   } = opts;
@@ -389,8 +395,11 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
   }
 
   // Floating Speech Bubble above head
-  if (chatBubble) {
+  if (chatBubble && chatBubbleAlpha > 0.01) {
     const truncated = chatBubble.length > 22 ? chatBubble.slice(0, 21) + '…' : chatBubble;
+    ctx.save();
+    ctx.globalAlpha = chatBubbleAlpha;
+    if (chatBubbleRise) ctx.translate(0, -chatBubbleRise);
     ctx.font = '500 12px "Plus Jakarta Sans", "PingFang SC", sans-serif';
     const bw = Math.max(40, ctx.measureText(truncated).width + 18);
     ctx.fillStyle = '#FFFFFF';
@@ -404,6 +413,7 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(truncated, 0, -61);
+    ctx.restore();
   }
 
   ctx.restore();

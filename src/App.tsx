@@ -44,6 +44,7 @@ import { SpatialAudioManager } from './lib/spatialAudio';
 import { P2PRoom, isP2PEnabled } from './lib/p2pRoom';
 import { CARRY, SCREEN_CARRY_TARGET, extractBiliPage } from './lib/roomCore';
 import { detectVideoLink } from './lib/videoLink';
+import { CHAT_BUBBLE_LIFETIME_MS } from './lib/chatBubble';
 import { extractBvid, fetchBilibiliMetaJsonp } from './lib/bilibiliMeta';
 import {
   clearWatchHistory,
@@ -639,7 +640,7 @@ export default function App() {
               const next = new Map(prev);
               next.set(chatMsg.playerId, {
                 text: chatMsg.text,
-                expiresAt: Date.now() + 4500,
+                expiresAt: Date.now() + CHAT_BUBBLE_LIFETIME_MS,
               });
               return next;
             });

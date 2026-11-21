@@ -10,6 +10,7 @@ import {
   VideoState,
 } from '../types/metaverse';
 import { drawChibiAvatar } from '../lib/avatarRenderer';
+import { bubbleVisual } from '../lib/chatBubble';
 import { CARRY, DEFAULT_SCREEN_ANCHOR, SCREEN_CARRY_TARGET, distanceToScreen } from '../lib/roomCore';
 import { PROXIMITY_RADIUS } from '../lib/spatialAudio';
 import { CentralCinemaScreen } from './CentralCinemaScreen';
@@ -741,7 +742,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             piggyback = false
           ) => {
             const bubble = bubbles.get(p.id);
-            const activeBubble = bubble && bubble.expiresAt > nowMs ? bubble.text : undefined;
+            const bubbleView = bubble ? bubbleVisual(bubble.text, bubble.expiresAt, nowMs) : null;
             const px = atX ?? p.x;
             const py = atY ?? p.y;
             ctx.save();
@@ -764,7 +765,9 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
               name: p.name,
               timeMs: now,
               speakingLevel: p.speakingLevel,
-              chatBubble: activeBubble,
+              chatBubble: bubbleView?.text,
+              chatBubbleAlpha: bubbleView?.alpha,
+              chatBubbleRise: bubbleView?.rise,
               hideShadow: piggyback,
               hideName: piggyback,
             });
