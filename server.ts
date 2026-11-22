@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { RoomCore, sanitizeRoomId, type Outbound } from './src/lib/roomCore';
 import { fetchVideoMeta } from './src/lib/videoMeta';
+import { proxyAiChat } from './src/lib/aiProxy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,6 +69,13 @@ async function startServer() {
       return;
     }
     res.json(await fetchVideoMeta(url));
+  });
+
+  // 外部大模型转发（与 Worker 同一份实现）：浏览器直连会被 CORS 拦
+  app.post('/api/ai', async (req, res) => {
+    const result = await proxyAiChat(req.body);
+    if (result.ok) res.json({ ok: true, data: result.data });
+    else res.status(result.status || 400).json({ ok: false, error: result.error });
   });
 
   const server = http.createServer(app);

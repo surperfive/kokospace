@@ -344,6 +344,12 @@ export class RoomCore {
   chatHistory: RoomChatMessage[] = [];
   /** 巨幕底边中心的世界坐标；null = 还没人搬过，用地图默认位置 */
   screenAnchor: { x: number; y: number } | null = null;
+  /**
+   * 房间连接方式。由房主宣告：'direct' 时所有人该连房主的 DataChannel，
+   * 'cloud' 时所有人走服务器。放在服务端而不是各自本地，是为了让「后进来的人」
+   * 也能一眼知道这屋子在直连，不用等房主再广播一次。
+   */
+  linkMode: 'cloud' | 'direct' = 'cloud';
 
   constructor(roomId: string, opts: { mapId?: string } = {}) {
     const mapId = opts.mapId && DEFAULT_MAP_FURNITURE[opts.mapId] ? opts.mapId : 'sunset-rooftop';
@@ -396,20 +402,25 @@ export class RoomCore {
     // 改成从中心向两侧铺开：0, +44, -44, +88, -88, +132
     const SPAWN_OFFSETS = [0, 44, -44, 88, -88, 132];
     const spawnOffset = SPAWN_OFFSETS[this.players.size % SPAWN_OFFSETS.length];
+    // 重连（换连接方式、断线重进）时沿用原来的位置和状态。
+    // 否则「直连切云端」会让全屋人瞬间被传送回出生点，看起来像集体掉线重进。
+    const existing = this.players.get(playerId);
     const player: RoomPlayer = {
       id: playerId,
       uid: typeof msg.uid === 'string' ? msg.uid.slice(0, 128) : null,
       name: clampText(msg.name, `旅人 ${playerId.slice(-4)}`, 24),
       avatar,
-      x: 800 + spawnOffset,
-      y: 790,
-      dir: 'up',
+      x: existing?.x ?? 800 + spawnOffset,
+      y: existing?.y ?? 790,
+      dir: existing?.dir ?? 'up',
       isMoving: false,
-      isSitting: false,
-      seatId: null,
-      isMicOn: false,
-      isBroadcasting: false,
+      isSitting: existing?.isSitting ?? false,
+      seatId: existing?.seatId ?? null,
+      isMicOn: existing?.isMicOn ?? false,
+      isBroadcasting: existing?.isBroadcasting ?? false,
       isHost: this.hostId === playerId,
+      carryTarget: existing?.carryTarget ?? null,
+      carriedBy: existing?.carriedBy ?? null,
     };
 
     this.players.set(playerId, player);
@@ -429,6 +440,7 @@ export class RoomCore {
           roomId: this.roomId,
           mapId: this.mapId,
           hostId: this.hostId,
+          linkMode: this.linkMode,
           players: Array.from(this.players.values()),
           furniture: this.furniture,
           videoState: this.videoState,
@@ -450,6 +462,10 @@ export class RoomCore {
 
     if (type === 'p2p:host') {
       return this.declareP2PHost(playerId);
+    }
+
+    if (type === 'p2p:off') {
+      return this.switchToCloud(playerId);
     }
 
     if (type === 'player:move') {
@@ -1138,6 +1154,7 @@ export class RoomCore {
     if (!leaving) return [];
     this.players.delete(playerId);
 
+    let hostLeftDirect = false;
     if (this.hostId === playerId) {
       const nextHost = this.players.keys().next().value || null;
       this.hostId = nextHost;
@@ -1145,11 +1162,20 @@ export class RoomCore {
         const nextPlayer = this.players.get(nextHost);
         if (nextPlayer) nextPlayer.isHost = true;
       }
+      // 房主走了，直连的「服务器」就没了。新上来的人手里没有房主的 RoomCore 状态，
+      // 也接不住已经建立的 DataChannel —— 直接让全屋回云端，比让客人等 ICE 超时快得多。
+      if (this.linkMode === 'direct') {
+        this.linkMode = 'cloud';
+        hostLeftDirect = true;
+      }
     }
 
     const out: Outbound[] = [
       { kind: 'all', payload: { type: 'player:left', playerId, newHostId: this.hostId } },
     ];
+    if (hostLeftDirect) {
+      out.push({ kind: 'all', payload: { type: 'p2p:off', hostId: this.hostId } });
+    }
 
     // 搬运关系：走的人扛着谁就放下谁；走的人被谁扛着就让对方松手
     if (leaving.carryTarget === SCREEN_CARRY_TARGET) {
@@ -1232,8 +1258,20 @@ export class RoomCore {
   declareP2PHost(playerId: string): Outbound[] {
     if (!this.players.has(playerId)) return [];
     this.hostId = playerId;
+    this.linkMode = 'direct';
     for (const p of this.players.values()) p.isHost = p.id === playerId;
     return [{ kind: 'all', payload: { type: 'p2p:host', hostId: playerId } }];
+  }
+
+  /**
+   * 房主主动切回云端。只认房主：别人喊一声「关直连」不应该能把整屋人踢下线。
+   * 广播 p2p:off 后，所有在直连的客人各自回落云端并重新 join 拉全量状态。
+   */
+  switchToCloud(playerId: string): Outbound[] {
+    if (this.hostId !== playerId) return [];
+    if (this.linkMode === 'cloud') return [];
+    this.linkMode = 'cloud';
+    return [{ kind: 'all', payload: { type: 'p2p:off', hostId: this.hostId } }];
   }
 
   /** 房主刷新后要恢复的状态（视频进度、场景、聊天） */

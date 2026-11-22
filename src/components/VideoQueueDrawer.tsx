@@ -10,6 +10,7 @@ import {
   Film,
   Loader2,
   History,
+  Sparkles,
 } from 'lucide-react';
 import { VideoState } from '../types/metaverse';
 import { formatHistoryTime, type WatchHistoryItem } from '../lib/watchHistory';
@@ -31,6 +32,8 @@ interface VideoQueueDrawerProps {
   onReplayHistory: (item: WatchHistoryItem) => Promise<void>;
   onRemoveHistory: (url: string) => void;
   onClearHistory: () => void;
+  /** 打开 AI 点播导演 */
+  onOpenAi: () => void;
 }
 
 const SKIP_STEP_OPTIONS = [15, 30, 60, 90];
@@ -70,6 +73,7 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
   onReplayHistory,
   onRemoveHistory,
   onClearHistory,
+  onOpenAi,
 }) => {
   const [urlInput, setUrlInput] = useState('');
   const [titleInput, setTitleInput] = useState('');
@@ -102,6 +106,15 @@ export const VideoQueueDrawer: React.FC<VideoQueueDrawerProps> = ({
                 : '点播只入队，当前片播完自动播放，不会打断别人'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={onOpenAi}
+            className="mr-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+            title="用一句话让 AI 帮你点播 / 控播放"
+          >
+            <Sparkles className="w-3 h-3" />
+            AI
+          </button>
           <button
             type="button"
             onClick={onClose}

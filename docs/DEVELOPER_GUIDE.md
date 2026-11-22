@@ -114,7 +114,6 @@ npm run start
 ---
 
 ## 6. 像素画板与开源引用
-
 房间里的挂画来自内置画板 `src/components/PixelArtStudio.tsx`：铅笔 / 橡皮 / 油漆桶 / 吸管、
 16·24·32 三档网格、对称绘制、撤销重做，导出 32×32 PNG dataURL。
 
@@ -135,4 +134,24 @@ npm run start
 **没有直接把这些库作为依赖引入**：Piskel / pixel-art-react 是整站应用（无法当组件嵌入），
 dotting 会带进自己的画布样式与交互，改造成本高于按同样的骨架重写一版。上表只是设计来源，代码是独立实现。
 另有一个 `pixel-dust` 也看过，但仓库**没有 LICENSE 文件**（GitHub 识别不到许可），不能引用，已排除。
+
+---
+
+## 7. AI 点播导演（外部模型）
+
+一句话指挥播放：「暂停一下」「跳到 3 分钟」「把这条链接加进队列」。
+
+- 协议：**OpenAI 兼容**的 `POST {baseUrl}/chat/completions`，所以 DeepSeek / OpenAI / 通义 / Kimi /
+  硅基流动 / Groq / OpenRouter 只要填 baseUrl + model + key 就能用。预设写在 `src/lib/aiDirector.ts` 的 `AI_PROVIDERS`。
+- 链路：浏览器 → `POST /api/ai`（`worker/index.ts` 与 `server.ts` 共用 `src/lib/aiProxy.ts`）→ 厂商。
+  **必须经服务端转发**：绝大多数厂商不返回 CORS 头，浏览器直连必被拦。
+- 安全边界写在 `aiProxy.ts` 里：只允许 https、只允许白名单域名（否则这个公开接口就成了开放代理）、
+  密钥只在请求体里出现，不落盘不打日志。前端把 key 存在 localStorage。
+- 模型只被允许输出一个 JSON：`{"reply": "...", "command": null | {type, ...}}`，
+  `command.type` 只认 `pause / play / skip / seek / enqueue`。解析在 `parseDirectorReply()`，
+  对```json 包裹、前后带解释都做了容错；**URL 必须 http(s) 开头，否则整条命令作废**（防止模型编造链接）。
+- 当前房间状态（在放什么、进度、队列、最近聊天）拼进 system prompt，模型才能回答「现在在放什么」。
+- 注意：面板渲染在**主页面**。用户若把画面弹到 Document PiP 悬浮窗里，面板会开在主页面（被别的应用挡着），
+  这一点还没做窗内适配。
+
 

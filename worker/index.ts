@@ -18,6 +18,7 @@ import {
   type Outbound,
 } from '../src/lib/roomCore';
 import { fetchVideoMeta } from '../src/lib/videoMeta';
+import { proxyAiChat } from '../src/lib/aiProxy';
 
 export interface Env {
   ROOMS: DurableObjectNamespace;
@@ -61,6 +62,24 @@ export default {
         return Response.json({ error: '请输入有效的视频链接' }, { status: 400 });
       }
       return Response.json(await fetchVideoMeta(videoUrl));
+    }
+
+    // 外部大模型转发：多数厂商 API 不返回 CORS 头，浏览器直连会被拦，只能从这里走。
+    // 只允许白名单 https 域名，避免变成开放代理。
+    if (url.pathname === '/api/ai') {
+      if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
+      }
+      let payload: unknown = null;
+      try {
+        payload = await request.json();
+      } catch {
+        return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 });
+      }
+      const result = await proxyAiChat(payload);
+      return Response.json(result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }, {
+        status: result.status,
+      });
     }
 
     // 静态资源 + SPA 回退

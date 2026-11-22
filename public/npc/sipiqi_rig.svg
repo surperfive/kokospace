@@ -1,0 +1,402 @@
+﻿<svg id="sipiqi-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-40 -30 680 560" preserveAspectRatio="xMidYMid meet">
+              <defs>
+                <!-- 后发与发尾柔和冷灰蓝渐变 -->
+                <linearGradient id="backHairMainGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+                  <stop offset="0%" stop-color="#DDD1C9"/>
+                  <stop offset="72%" stop-color="#D2C5BE"/>
+                  <stop offset="100%" stop-color="#B9C5D4"/>
+                </linearGradient>
+
+                <linearGradient id="leftBackStrandGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+                  <stop offset="0%" stop-color="#FAF5E6"/>
+                  <stop offset="78%" stop-color="#F2EAD9"/>
+                  <stop offset="100%" stop-color="#E2E5EB"/>
+                </linearGradient>
+
+                <linearGradient id="backHairStrokeGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+                  <stop offset="0%" stop-color="#582E2D"/>
+                  <stop offset="78%" stop-color="#5D3738"/>
+                  <stop offset="100%" stop-color="#767D8E"/>
+                </linearGradient>
+
+                <!-- 前发柔和浅奶油金渐变 -->
+                <linearGradient id="frontHairGrad" x1="0.4" y1="0" x2="0.6" y2="1">
+                  <stop offset="0%" stop-color="#FDF9EC"/>
+                  <stop offset="68%" stop-color="#F6F0DF"/>
+                  <stop offset="100%" stop-color="#EAE0D2"/>
+                </linearGradient>
+
+                <!-- 修女头纱与长袍深紫灰渐变 -->
+                <linearGradient id="veilGrad" x1="0.3" y1="0" x2="0.7" y2="1">
+                  <stop offset="0%" stop-color="#6B5C70"/>
+                  <stop offset="45%" stop-color="#5F5265"/>
+                  <stop offset="100%" stop-color="#514557"/>
+                </linearGradient>
+
+                <linearGradient id="habitGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+                  <stop offset="0%" stop-color="#635669"/>
+                  <stop offset="65%" stop-color="#594C5F"/>
+                  <stop offset="100%" stop-color="#4D4153"/>
+                </linearGradient>
+
+                <!-- 右下小腿冰蓝白袜与鞋履渐变 -->
+                <linearGradient id="lowerSockGrad" x1="0" y1="0.2" x2="1" y2="0.8">
+                  <stop offset="0%" stop-color="#FFFFFF"/>
+                  <stop offset="55%" stop-color="#E5F4FA"/>
+                  <stop offset="100%" stop-color="#C4DFEC"/>
+                </linearGradient>
+
+                <!-- 里侧远端左腿微暗白袜渐变 -->
+                <linearGradient id="farSockGrad" x1="0" y1="0.2" x2="1" y2="0.8">
+                  <stop offset="0%" stop-color="#EFEBF0"/>
+                  <stop offset="55%" stop-color="#D5E5F0"/>
+                  <stop offset="100%" stop-color="#B0CADE"/>
+                </linearGradient>
+
+                <linearGradient id="bootGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#9CB1C6"/>
+                  <stop offset="55%" stop-color="#879CB5"/>
+                  <stop offset="100%" stop-color="#788DA7"/>
+                </linearGradient>
+
+                <linearGradient id="farBootGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#869BB2"/>
+                  <stop offset="55%" stop-color="#7186A0"/>
+                  <stop offset="100%" stop-color="#627792"/>
+                </linearGradient>
+
+                <linearGradient id="legOutlineFade" x1="0" y1="0.5" x2="1" y2="0.5">
+                  <stop offset="0%" stop-color="#582E2D"/>
+                  <stop offset="45%" stop-color="#6A5B6B"/>
+                  <stop offset="100%" stop-color="#7A8EA8"/>
+                </linearGradient>
+
+                <!-- 脸部轮廓裁剪路径 -->
+                <clipPath id="faceClip">
+                  <path d="M 152 178 C 122 186 108 206 112 232 C 117 258 158 278 214 287 C 268 295 314 290 338 276 C 348 250 344 196 322 162 C 278 140 198 142 152 178 Z"/>
+                </clipPath>
+              </defs>
+
+              <!-- 整体镜像翻转容器（供朝左/朝右无损翻转及导出同步） -->
+              <g id="Facing_Wrapper">
+                <!-- 1. 地面接触软阴影 -->
+                <g id="Ground_Shadow">
+                  <ellipse id="Ground_Shadow_Ellipse" cx="320" cy="466" rx="165" ry="18" fill="rgba(88,46,45,0.16)"/>
+                </g>
+
+                <!-- 2. 角色骨骼根节点（整体起伏与微挤压弹性） -->
+                <g id="Character_Root">
+                  <!-- 2A. 后层长发骨骼 (pivot: 260, 290) -->
+                  <g id="Back_Hair_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 右侧垂落于头纱底部的发尾 -->
+                    <path d="M 412 248 C 446 285 478 335 480 392 L 456 385 L 408 282 Z"
+                          fill="#EFE7D8" stroke="#582E2D" stroke-width="5.5"/>
+                    <!-- 双臂之间与背后垂落的阴影发束 -->
+                    <path d="M 142 290 L 336 300 L 344 454 C 336 458 324 458 318 452 L 292 418 L 285 456 C 273 458 265 446 260 416 L 256 456 C 246 460 236 458 232 452 L 206 434 L 196 459 C 178 461 164 448 156 424 L 142 356 Z"
+                          fill="url(#backHairMainGrad)" stroke="url(#backHairStrokeGrad)" stroke-width="5.5"/>
+                    <!-- 左侧最外缘长发束 -->
+                    <path d="M 118 320 C 114 368 116 420 126 446 C 132 456 146 461 160 460 C 151 430 148 386 151 334 Z"
+                          fill="url(#leftBackStrandGrad)" stroke="url(#backHairStrokeGrad)" stroke-width="5.8"/>
+                    <path d="M 136 334 C 134 380 137 425 147 454 C 152 456 156 456 158 455 C 150 426 148 382 150 334 Z"
+                          fill="#DFD4CA" opacity="0.7"/>
+                  </g>
+
+                  <!-- 2B. 里侧左腿骨骼 (Far_Leg_Rig, pivot: 365, 405) -->
+                  <g id="Far_Leg_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 远端小腿冰蓝白袜与鞋履主体 -->
+                    <path d="M 392 406 L 448 405 C 468 406 480 418 482 436 C 484 450 478 458 464 459 L 390 458 C 395 442 396 422 392 406 Z"
+                          fill="url(#farSockGrad)" stroke="url(#legOutlineFade)" stroke-width="5.5"/>
+                    <!-- 远端蓝灰圆头鞋 -->
+                    <path d="M 444 406 C 466 406 480 418 482 436 C 484 450 478 458 464 459 L 448 459 C 448 440 446 422 444 406 Z"
+                          fill="url(#farBootGrad)" stroke="#6D8099" stroke-width="5.2"/>
+                    <!-- 远端鞋面浅蓝系带条纹 -->
+                    <path d="M 458 409 C 463 424 464 442 463 458" fill="none" stroke="#AEC4D9" stroke-width="6.2"/>
+                    <path d="M 455 408 C 460 424 461 442 460 458" fill="none" stroke="#6D8099" stroke-width="4.2"/>
+                    <path d="M 465 411 C 469 426 470 443 469 458" fill="none" stroke="#6D8099" stroke-width="4.2"/>
+                    <!-- 远端荷叶边袜口 -->
+                    <path d="M 386 408 C 395 412 396 422 389 427 C 398 432 398 442 390 447 C 397 451 396 458 386 458 C 380 457 378 451 381 446 C 385 436 386 422 382 410 Z"
+                          fill="#F5F0F3" stroke="#582E2D" stroke-width="5"/>
+                    <!-- 远端里侧大腿/膝盖 -->
+                    <path d="M 332 418 C 334 444 352 462 376 463 C 392 464 402 458 408 450 L 398 412 Z"
+                          fill="#F5ECEB" stroke="#582E2D" stroke-width="5.8"/>
+                    <path d="M 337 420 C 344 432 362 440 388 438 L 392 418 L 336 416 Z"
+                          fill="#DFCECE" opacity="0.78"/>
+                  </g>
+
+                  <!-- 2C. 画面左侧远端左臂骨骼 (Far_Arm_Rig, pivot: 226, 308) -->
+                  <g id="Far_Arm_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 撑地小肉手 -->
+                    <path d="M 200 438 C 194 448 194 461 204 462 C 210 465 220 466 227 462 C 234 464 242 460 244 452 L 246 438 Z"
+                          fill="#FDF2EE" stroke="#582E2D" stroke-width="5.6"/>
+                    <!-- 白色袖口 -->
+                    <path d="M 201 416 C 216 421 236 421 251 418 L 248 441 C 234 445 214 444 199 439 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.6"/>
+                    <!-- 顶部圆润闭合的深紫灰泡泡袖与手臂（旋转无缺口） -->
+                    <path d="M 210 288 C 194 304 190 326 200 342 C 203 347 206 350 207 355 L 201 416 C 216 421 236 421 251 418 L 256 354 C 254 344 246 338 242 332 C 252 316 250 296 236 286 C 226 280 216 282 210 288 Z"
+                          fill="url(#habitGrad)" stroke="#582E2D" stroke-width="5.8"/>
+                  </g>
+
+                  <!-- 2D. 身体、修女长袍与后背骷髅骨骼 (Torso_Rig, pivot: 315, 360) -->
+                  <g id="Torso_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 鹅黄衬裙与底层白色蕾丝花边 -->
+                    <path d="M 332 406 C 340 420 356 424 368 418 C 379 426 396 424 406 416 C 412 418 420 416 422 410 L 416 396 L 332 396 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.2"/>
+                    <path d="M 334 382 L 418 380 L 416 406 C 392 412 356 412 332 404 Z"
+                          fill="#F7C77E" stroke="#582E2D" stroke-width="5.2"/>
+
+                    <!-- 深紫灰修女上衣与后摆 -->
+                    <path d="M 220 288 L 382 288 C 436 296 476 334 480 398 C 476 412 456 418 430 414 C 412 412 396 402 384 388 L 332 388 L 234 360 Z"
+                          fill="url(#habitGrad)" stroke="#582E2D" stroke-width="5.8"/>
+
+                    <!-- 前摆白色波浪蕾丝边 -->
+                    <path d="M 332 378 C 344 386 362 386 372 376 C 382 381 395 377 402 368 C 407 368 412 364 414 358 L 402 350 L 332 364 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.2"/>
+                    <path d="M 330 364 C 358 364 384 358 408 346" fill="none" stroke="#582E2D" stroke-width="5.2"/>
+
+                    <!-- 后裙摆白色蕾丝花边 -->
+                    <path d="M 390 392 C 394 408 408 415 420 410 C 430 420 446 420 456 413 C 466 420 478 415 481 402 C 472 396 456 392 436 392 C 418 392 402 390 390 392 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.2"/>
+                    <path d="M 394 384 C 418 398 456 406 479 398" fill="none" stroke="#582E2D" stroke-width="5.2"/>
+
+                    <!-- 胸前白色圆领与门襟 -->
+                    <path d="M 244 334 L 288 334 L 290 364 C 276 367 260 364 252 356 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.2"/>
+                    <path d="M 268 336 L 280 362" fill="none" stroke="#EAB874" stroke-width="6.5"/>
+                    <path d="M 263 336 L 275 362" fill="none" stroke="#582E2D" stroke-width="4.8"/>
+
+                    <path d="M 236 290 C 242 308 262 316 288 314 C 298 312 304 302 304 292 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.4"/>
+                    <path d="M 252 292 C 260 300 278 302 292 296" fill="none" stroke="#582E2D" stroke-width="4.5"/>
+
+                    <!-- 胸前鹅黄色小蝴蝶结 -->
+                    <g id="Front_Bow">
+                      <path d="M 262 316 C 249 306 234 303 230 309 C 226 316 232 336 240 340 C 248 344 258 335 264 328 Z"
+                            fill="#F9C982" stroke="#582E2D" stroke-width="5.2"/>
+                      <path d="M 274 316 C 284 308 295 308 298 315 C 300 322 294 336 286 338 C 279 339 274 332 271 327 Z"
+                            fill="#F9C982" stroke="#582E2D" stroke-width="5.2"/>
+                      <rect x="260" y="311" width="14" height="20" rx="5" fill="#F3B86B" stroke="#582E2D" stroke-width="5"/>
+                    </g>
+
+                    <!-- 后背骷髅与蝴蝶结配饰骨骼 (pivot: 412, 332) -->
+                    <g id="Skull_Rig">
+                      <g id="Back_Bow">
+                        <path d="M 442 372 C 430 368 422 374 424 384 C 426 394 434 398 444 386 Z"
+                              fill="#F8C67D" stroke="#582E2D" stroke-width="5"/>
+                        <path d="M 449 368 C 454 356 462 349 468 354 C 474 360 474 380 468 386 C 462 392 454 384 449 376 Z"
+                              fill="#F8C67D" stroke="#582E2D" stroke-width="5"/>
+                        <ellipse cx="446" cy="374" rx="6" ry="8" transform="rotate(-18 446 374)"
+                                 fill="#F0B165" stroke="#582E2D" stroke-width="4.8"/>
+                      </g>
+                      <g id="Skull_Ornament">
+                        <path d="M 382 288 C 402 276 426 284 439 306 C 448 322 448 338 444 348 L 446 364 C 440 370 432 372 424 371 L 414 358 C 398 356 382 342 378 320 C 376 306 378 294 382 288 Z"
+                              fill="#FFFFFF" stroke="#582E2D" stroke-width="5.6"/>
+                        <path d="M 386 336 C 398 348 416 354 438 350 L 444 362 C 436 369 426 369 418 364 L 412 356 C 398 352 388 344 386 336 Z"
+                              fill="#E3DCE0"/>
+                        <ellipse cx="399" cy="326" rx="11" ry="18" transform="rotate(-18 399 326)" fill="#58302F"/>
+                        <ellipse cx="432" cy="314" rx="9.5" ry="16.5" transform="rotate(-20 432 314)" fill="#58302F"/>
+                        <line x1="426" y1="358" x2="430" y2="369" stroke="#582E2D" stroke-width="4.2"/>
+                        <line x1="434" y1="355" x2="438" y2="367" stroke="#582E2D" stroke-width="4.2"/>
+                      </g>
+                    </g>
+                  </g>
+
+                  <!-- 2E. 外侧右腿骨骼 (Near_Leg_Rig, pivot: 405, 405) -->
+                  <g id="Near_Leg_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 外侧大腿/膝盖 -->
+                    <path d="M 380 418 C 384 445 404 466 426 466 C 436 466 442 454 442 436 L 434 412 Z"
+                          fill="#FBF6F5" stroke="#582E2D" stroke-width="5.8"/>
+                    <path d="M 384 422 C 392 436 408 446 426 444 L 432 420 Z"
+                          fill="#E8DADA" opacity="0.65"/>
+                    <!-- 小腿冰蓝白袜与鞋履主体 -->
+                    <path d="M 434 416 L 488 415 C 508 416 520 428 522 446 C 524 460 518 468 504 469 L 432 468 C 437 452 438 432 434 416 Z"
+                          fill="url(#lowerSockGrad)" stroke="url(#legOutlineFade)" stroke-width="5.8"/>
+                    <!-- 蓝灰圆头鞋 -->
+                    <path d="M 484 416 C 506 416 520 428 522 446 C 524 460 518 468 504 469 L 488 469 C 488 450 486 432 484 416 Z"
+                          fill="url(#bootGrad)" stroke="#7588A1" stroke-width="5.5"/>
+                    <!-- 鞋面浅蓝系带条纹 -->
+                    <path d="M 498 419 C 503 434 504 452 503 468" fill="none" stroke="#BDD2E4" stroke-width="6.5"/>
+                    <path d="M 495 418 C 500 434 501 452 500 468" fill="none" stroke="#7588A1" stroke-width="4.5"/>
+                    <path d="M 505 421 C 509 436 510 453 509 468" fill="none" stroke="#7588A1" stroke-width="4.5"/>
+                    <!-- 白色荷叶边袜口 -->
+                    <path d="M 426 418 C 435 422 436 432 429 437 C 438 442 438 452 430 457 C 437 461 436 468 426 468 C 420 467 418 461 421 456 C 425 446 426 432 422 420 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.2"/>
+                  </g>
+
+                  <!-- 2F. 画面右侧近端右臂骨骼 (Near_Arm_Rig, pivot: 312, 315) -->
+                  <g id="Near_Arm_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 撑地小肉手 -->
+                    <path d="M 284 446 C 280 456 282 466 292 468 C 298 471 308 471 315 468 C 322 470 329 465 329 456 L 329 446 Z"
+                          fill="#FDF2EE" stroke="#582E2D" stroke-width="5.6"/>
+                    <!-- 白色袖口 -->
+                    <path d="M 284 424 C 300 429 318 429 332 426 L 330 448 C 316 452 298 451 283 446 Z"
+                          fill="#FFFFFF" stroke="#582E2D" stroke-width="5.6"/>
+                    <!-- 顶部圆润闭合的深紫灰泡泡袖与手臂（旋转无缺口） -->
+                    <path d="M 288 294 C 278 312 278 334 287 350 L 284 424 C 300 429 318 429 332 426 L 337 360 C 349 354 357 340 356 324 C 355 304 342 290 324 286 C 308 283 294 286 288 294 Z"
+                          fill="url(#habitGrad)" stroke="#582E2D" stroke-width="5.8"/>
+                  </g>
+
+                  <!-- 2G. 头部总控骨骼 (Head_Rig, pivot: 265, 285) -->
+                  <g id="Head_Rig" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- 脸部与腮红 -->
+                    <g id="Head_and_Face">
+                      <path d="M 152 178 C 122 186 108 206 112 232 C 117 258 158 278 214 287 C 268 295 314 290 338 276 C 348 250 344 196 322 162 C 278 140 198 142 152 178 Z"
+                            fill="#FBF3F0"/>
+                      <g clip-path="url(#faceClip)">
+                        <path d="M 135 152 L 342 166 L 338 192 C 280 180 202 174 140 182 Z" fill="#ECDBD7" opacity="0.72"/>
+                        <ellipse cx="152" cy="224" rx="46" ry="38" transform="rotate(14 152 224)" fill="#F7ACA5"/>
+                        <g stroke="#E37C7A" stroke-width="4.2" stroke-linecap="round">
+                          <line x1="136" y1="212" x2="127" y2="225"/>
+                          <line x1="154" y1="217" x2="145" y2="230"/>
+                          <line x1="173" y1="224" x2="165" y2="236"/>
+                        </g>
+                        <ellipse cx="314" cy="254" rx="31" ry="30" transform="rotate(12 314 254)" fill="#F7ACA5"/>
+                        <g stroke="#E37C7A" stroke-width="4.2" stroke-linecap="round">
+                          <line x1="296" y1="248" x2="290" y2="260"/>
+                          <line x1="313" y1="252" x2="307" y2="264"/>
+                        </g>
+                      </g>
+                      <path d="M 152 178 C 122 186 108 206 112 232 C 117 258 158 278 214 287 C 268 295 314 290 338 276"
+                            fill="none" stroke="#582E2D" stroke-width="5.8"/>
+                    </g>
+
+                    <!-- 泪眼汪汪五官 -->
+                    <g id="Eyes_and_Mouth">
+                      <!-- 左眼（含眨眼缩放组） -->
+                      <g id="Left_Eye_Blink">
+                        <path d="M 157 179 C 166 156 202 152 216 174" fill="none" stroke="#582E2D" stroke-width="5.2"/>
+                        <ellipse cx="188" cy="193" rx="26.5" ry="25" transform="rotate(12 188 193)"
+                                 fill="#592F2E" stroke="#582E2D" stroke-width="4.5"/>
+                        <ellipse cx="192" cy="206" rx="14" ry="7" transform="rotate(12 192 206)"
+                                 fill="#7A4643" opacity="0.75"/>
+                        <path d="M 174 176 C 184 171 196 177 195 188 C 194 197 181 200 173 194 C 167 189 168 179 174 176 Z"
+                              fill="#FFFFFF"/>
+                        <ellipse cx="202" cy="202" rx="6.5" ry="5.5" transform="rotate(15 202 202)" fill="#FFFFFF"/>
+                        <circle cx="177" cy="202" r="2.6" fill="#FFFFFF"/>
+                      </g>
+                      <!-- 左眼角大泪珠（微颤动） -->
+                      <g id="Left_Tear">
+                        <path d="M 164 202 C 150 202 141 209 144 216 C 147 223 162 222 173 216 C 178 213 173 203 164 202 Z"
+                              fill="#FFFFFF" stroke="#582E2D" stroke-width="4.8"/>
+                      </g>
+
+                      <!-- 右眼（含眨眼缩放组） -->
+                      <g id="Right_Eye_Blink">
+                        <path d="M 262 189 C 278 171 312 178 320 206" fill="none" stroke="#582E2D" stroke-width="5.2"/>
+                        <ellipse cx="284" cy="212" rx="27" ry="25.5" transform="rotate(14 284 212)"
+                                 fill="#592F2E" stroke="#582E2D" stroke-width="4.5"/>
+                        <ellipse cx="282" cy="226" rx="13" ry="6.5" transform="rotate(14 282 226)"
+                                 fill="#7A4643" opacity="0.75"/>
+                        <path d="M 268 195 C 278 190 291 196 290 207 C 289 216 275 219 267 212 C 261 207 262 198 268 195 Z"
+                              fill="#FFFFFF"/>
+                        <ellipse cx="294" cy="222" rx="6" ry="5" transform="rotate(12 294 222)" fill="#FFFFFF"/>
+                        <circle cx="271" cy="220" r="2.6" fill="#FFFFFF"/>
+                      </g>
+                      <!-- 右眼角大泪珠（微颤动） -->
+                      <g id="Right_Tear">
+                        <path d="M 294 228 C 288 232 287 241 294 247 C 302 254 314 252 315 244 C 316 237 305 224 294 228 Z"
+                              fill="#FFFFFF" stroke="#582E2D" stroke-width="4.8"/>
+                      </g>
+
+                      <!-- 开心哭泣张开的小嘴 -->
+                      <g id="Mouth">
+                        <path d="M 220 229 C 226 232 232 230 236 226 C 242 230 248 233 253 233 C 262 246 265 268 256 278 C 247 286 232 277 224 260 C 220 250 218 238 220 229 Z"
+                              fill="#F18D86" stroke="#582E2D" stroke-width="5.2"/>
+                        <path d="M 222 232 C 228 235 233 233 236 230 C 241 234 247 236 252 236 C 254 241 255 245 255 249 C 242 245 230 243 221 244 Z"
+                              fill="#DC746E" opacity="0.65"/>
+                        <path d="M 215 227 C 222 232 230 231 236 225 C 242 231 249 234 256 233"
+                              fill="none" stroke="#582E2D" stroke-width="5.2"/>
+                      </g>
+                    </g>
+
+                    <!-- 前发、双侧飘动鬓角与八字眉 -->
+                    <g id="Front_Hair_and_Bangs">
+                      <!-- 左侧鬓角长发骨骼 (pivot: 148, 128) -->
+                      <g id="Left_Side_Lock">
+                        <path d="M 176 80 C 154 90 132 108 118 140 C 100 184 92 236 94 282 C 95 304 99 318 110 318 C 114 318 116 316 117 314 C 118 322 126 329 142 329 L 143 268 C 114 250 107 228 113 206 C 118 190 134 180 151 176 L 158 146 Z"
+                              fill="url(#frontHairGrad)" stroke="#582E2D" stroke-width="5.8"/>
+                        <path d="M 114 278 C 113 296 114 308 116 316" fill="none" stroke="#582E2D" stroke-width="5"/>
+                        <path d="M 118 282 L 138 274 L 138 324 C 128 324 121 319 120 312 Z" fill="#E6DCD1" opacity="0.72"/>
+                      </g>
+
+                      <!-- 右侧长直鬓角骨骼 (pivot: 345, 140) -->
+                      <g id="Right_Side_Lock">
+                        <path d="M 320 176 C 324 238 334 294 352 332 C 358 337 366 337 371 331 C 376 338 386 341 395 338 C 382 292 374 218 370 124 L 330 108 Z"
+                              fill="url(#frontHairGrad)" stroke="#582E2D" stroke-width="5.8"/>
+                        <path d="M 353 292 C 358 310 364 322 370 331" fill="none" stroke="#582E2D" stroke-width="5"/>
+                        <path d="M 325 184 C 330 242 340 294 355 328 L 368 328 C 354 294 344 242 339 184 Z"
+                              fill="#E5DAD0" opacity="0.65"/>
+                      </g>
+
+                      <!-- 额前整体刘海与左上翘起呆毛 -->
+                      <path d="M 184 74 C 162 84 134 94 116 84 C 113 96 125 110 144 108 C 138 118 134 134 139 152 C 155 154 172 152 188 148 C 194 140 202 128 210 116 C 206 132 204 146 206 158 C 218 162 230 164 241 164 C 242 154 241 144 241 138 C 244 152 248 162 256 166 C 268 170 280 171 290 169 C 288 154 289 138 292 122 C 292 142 295 160 301 171 C 316 177 332 181 344 181 C 349 162 346 136 334 112 L 368 122 L 364 102 C 308 78 242 68 184 74 Z"
+                            fill="url(#frontHairGrad)"/>
+
+                      <!-- 刘海底部暖米色立体阴影 -->
+                      <path d="M 142 138 C 160 140 176 138 190 134 L 188 148 C 172 152 155 154 139 152 Z" fill="#E6DBD0" opacity="0.8"/>
+                      <path d="M 207 146 C 218 150 230 152 241 151 L 241 164 C 230 164 218 162 206 158 Z" fill="#E6DBD0" opacity="0.8"/>
+                      <path d="M 248 152 C 260 157 274 159 288 157 L 290 169 C 276 171 262 169 252 164 Z" fill="#E6DBD0" opacity="0.8"/>
+                      <path d="M 297 156 C 312 163 328 168 344 167 L 344 181 C 328 181 312 177 301 171 Z" fill="#E6DBD0" opacity="0.8"/>
+
+                      <!-- 刘海顶部三处软萌白色高光团 -->
+                      <g id="Hair_Highlights">
+                        <ellipse cx="192" cy="105" rx="23" ry="13" transform="rotate(-16 192 105)" fill="#DCD1C6" opacity="0.7"/>
+                        <ellipse cx="191" cy="101" rx="22" ry="12" transform="rotate(-16 191 101)" fill="#FFFFFF"/>
+                        <ellipse cx="236" cy="112" rx="13" ry="9" transform="rotate(-8 236 112)" fill="#DCD1C6" opacity="0.7"/>
+                        <ellipse cx="235" cy="109" rx="12.5" ry="8.5" transform="rotate(-8 235 109)" fill="#FFFFFF"/>
+                        <circle cx="257" cy="117" r="5" fill="#DCD1C6" opacity="0.65"/>
+                        <circle cx="256" cy="115" r="4.5" fill="#FFFFFF"/>
+                        <ellipse cx="312" cy="116" rx="13" ry="9.5" transform="rotate(18 312 116)" fill="#DCD1C6" opacity="0.7"/>
+                        <ellipse cx="312" cy="113" rx="12.5" ry="9" transform="rotate(18 312 113)" fill="#FFFFFF"/>
+                      </g>
+
+                      <!-- 刘海与呆毛外轮廓描边 -->
+                      <path d="M 196 82 C 166 96 140 124 139 152 C 155 154 172 152 188 148 C 198 136 210 120 221 106"
+                            fill="none" stroke="#582E2D" stroke-width="5.6"/>
+                      <path d="M 212 119 C 206 132 204 146 206 158 C 218 162 230 164 241 164 C 242 154 241 144 241 138 C 244 152 248 162 256 166 C 268 170 280 171 290 169 C 288 152 289 134 292 118"
+                            fill="none" stroke="#582E2D" stroke-width="5.6"/>
+                      <path d="M 291 128 C 292 146 295 161 301 171 C 316 177 332 181 344 181 C 349 162 346 136 334 113"
+                            fill="none" stroke="#582E2D" stroke-width="5.6"/>
+                      <path d="M 184 74 C 162 84 134 94 116 84 C 113 96 125 110 146 108"
+                            fill="none" stroke="#582E2D" stroke-width="5.6"/>
+
+                      <!-- 委屈/恳求八字粗眉 -->
+                      <path d="M 183 130 C 194 128 205 123 213 116" fill="none" stroke="#582E2D" stroke-width="5.5"/>
+                      <path d="M 281 137 C 290 142 299 148 307 154" fill="none" stroke="#582E2D" stroke-width="5.5"/>
+                    </g>
+
+                    <!-- 修女头纱、额带与星芒装饰骨骼 (Veil_Rig, pivot: 265, 55) -->
+                    <g id="Veil_Rig">
+                      <!-- 头纱右侧内缘白色波浪蕾丝花边 -->
+                      <path d="M 370 132 C 365 148 367 166 376 176 C 374 192 380 208 392 216 C 394 232 404 246 418 252 C 424 268 438 280 454 283 C 464 296 480 304 494 302 C 498 308 504 310 508 307 L 486 278 L 418 188 L 382 126 Z"
+                            fill="#FFFFFF" stroke="#582E2D" stroke-width="5.4"/>
+                      <path d="M 376 138 C 378 186 408 242 468 284 L 496 300 C 464 296 426 268 400 222 C 384 194 374 166 376 138 Z"
+                            fill="#E7DEE3"/>
+                      <!-- 头纱深紫灰主罩体 -->
+                      <path d="M 152 86 C 162 56 206 36 278 34 C 356 32 414 58 446 112 C 468 150 472 200 476 242 C 480 272 492 292 508 307 C 470 296 436 272 412 232 C 392 198 380 156 372 122 C 316 86 244 72 178 76 C 168 78 160 82 152 86 Z"
+                            fill="url(#veilGrad)" stroke="#582E2D" stroke-width="5.8"/>
+                      <path d="M 360 76 C 366 94 370 110 374 124" fill="none" stroke="#582E2D" stroke-width="5.4"/>
+                      <!-- 白色圆弧修女额带 -->
+                      <path d="M 176 76 C 226 52 308 62 367 95 L 372 122 C 314 86 240 72 176 76 Z"
+                            fill="#FFFFFF" stroke="#582E2D" stroke-width="5.6"/>
+                      <!-- 额带正中金色小十字架 -->
+                      <g id="Headband_Cross" fill="#EBB976">
+                        <rect x="266.5" y="61.5" width="6.5" height="17" rx="2.5" transform="rotate(6 270 70)"/>
+                        <rect x="260.5" y="66.5" width="18.5" height="6.5" rx="2.5" transform="rotate(6 270 70)"/>
+                      </g>
+                      <!-- 头纱右侧金色弧形镶边条纹 -->
+                      <path d="M 378 92 C 390 156 410 214 446 254 C 462 272 478 282 492 288"
+                            fill="none" stroke="#EBB976" stroke-width="4.5" stroke-linecap="round"/>
+                      <!-- 头纱右侧 6 颗金色四角星芒 -->
+                      <g id="Veil_Stars" fill="#EBB976">
+                        <path d="M 397 100 L 400 106 L 406 109 L 400 112 L 397 118 L 394 112 L 388 109 L 394 106 Z"/>
+                        <path d="M 406 130 L 408.5 135.5 L 414 138 L 408.5 140.5 L 406 146 L 403.5 140.5 L 398 138 L 403.5 135.5 Z"/>
+                        <path d="M 415 160 L 417.5 165.5 L 423 168 L 417.5 170.5 L 415 176 L 412.5 170.5 L 407 168 L 412.5 165.5 Z"/>
+                        <path d="M 426 189 L 428.5 194.5 L 434 197 L 428.5 199.5 L 426 205 L 423.5 199.5 L 418 197 L 423.5 194.5 Z"/>
+                        <path d="M 441 215 L 443.5 220.5 L 449 223 L 443.5 225.5 L 441 231 L 438.5 225.5 L 433 223 L 438.5 220.5 Z"/>
+                        <path d="M 461 239 L 463.5 244 L 468.5 246.5 L 463.5 249 L 461 254 L 458.5 249 L 453.5 246.5 L 458.5 244 Z"/>
+                      </g>
+                    </g>
+                  </g>
+                </g>
+              </g>
+            </svg>

@@ -20,6 +20,7 @@ import {
   Loader2,
   PictureInPicture2,
   Palette,
+  ChevronDown,
 } from 'lucide-react';
 import {
   AvatarConfig,
@@ -41,7 +42,7 @@ import {
 } from './lib/scenePresets';
 import { pluginRegistry } from './lib/pluginRegistry';
 import { SpatialAudioManager } from './lib/spatialAudio';
-import { P2PRoom, isP2PEnabled } from './lib/p2pRoom';
+import { P2PRoom, isP2PEnabled, setLinkModePreference } from './lib/p2pRoom';
 import { CARRY, SCREEN_CARRY_TARGET, extractBiliPage } from './lib/roomCore';
 import { detectVideoLink } from './lib/videoLink';
 import { CHAT_BUBBLE_LIFETIME_MS } from './lib/chatBubble';
@@ -60,6 +61,8 @@ import { VideoQueueDrawer } from './components/VideoQueueDrawer';
 import { SceneEditorModal } from './components/SceneEditorModal';
 import { DeveloperDocsModal } from './components/DeveloperDocsModal';
 import { PixelArtStudio } from './components/PixelArtStudio';
+import { AiDirectorModal } from './components/AiDirectorModal';
+import { useDocumentPip } from './hooks/useDocumentPip';
 
 function getInitialRoomId(): string {
   const params = new URLSearchParams(window.location.search);
@@ -136,6 +139,7 @@ export default function App() {
   const [showSceneModal, setShowSceneModal] = useState(false);
   const [showDocsModal, setShowDocsModal] = useState(false);
   const [showPixelStudio, setShowPixelStudio] = useState(false);
+  const [showAiModal, setShowAiModal] = useState(false);
   /** 画板导出后待挂的画（挂到墙上时塞进 furniture.art） */
   const [pendingArt, setPendingArt] = useState<string | null>(null);
   const [showEmojiMenu, setShowEmojiMenu] = useState(false);
@@ -165,15 +169,21 @@ export default function App() {
   );
   // 手动断开：与网络掉线区分开。true 时连接 effect 不重连、不发送任何业务消息。
   const [manuallyDisconnected, setManuallyDisconnected] = useState(false);
+  /** 连接方式选择菜单（点状态胶囊展开） */
+  const [showLinkMenu, setShowLinkMenu] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const manuallyDisconnectedRef = useRef<boolean>(false);
   /** 云端模式下点状态胶囊手动重试直连（由连接 effect 注入） */
   const p2pRetryRef = useRef<(() => void) | null>(null);
+  /** 切换连接方式（由连接 effect 注入）：'direct' 自己当房主开直连，'cloud' 关掉直连回云端 */
+  const linkSwitchRef = useRef<((mode: 'direct' | 'cloud') => void) | null>(null);
   const p2pRef = useRef<P2PRoom | null>(null);
   const p2pEnabledRef = useRef<boolean>(isP2PEnabled());
   const p2pHostRef = useRef<string | null>(null);
   const p2pFallbackRef = useRef<number | null>(null);
+  /** 直连失败过就别再自动重试：否则「join → 自动直连 → 12 秒超时 → 回落 → join」会死循环 */
+  const p2pGaveUpRef = useRef(false);
   const isP2PHostRef = useRef(false);
   const audioMgrRef = useRef<SpatialAudioManager | null>(null);
   const playersRef = useRef<PlayerState[]>([]);
@@ -189,6 +199,18 @@ export default function App() {
   videoStateRef.current = videoState;
   serverOffsetRef.current = serverTimeOffsetMs;
   manuallyDisconnectedRef.current = manuallyDisconnected;
+  /**
+   * 云端 → 直连时，把「现在屏幕上这份状态」交给新房主核心。
+   * 用 ref 而不是闭包捕获，保证点击那一刻拿到的是最新值。
+   */
+  const linkStateRef = useRef({ mapId, furniture, videoState, chatHistory, screenAnchor });
+  linkStateRef.current = { mapId, furniture, videoState, chatHistory, screenAnchor };
+
+  /** 当前用户是不是房主（只有房主能决定全屋走直连还是云端） */
+  const isRoomHost = useMemo(
+    () => players.some((p) => p.id === localPlayerId && p.isHost),
+    [players, localPlayerId]
+  );
 
   const currentMapTheme = useMemo(() => {
     return allMaps.find((m) => m.id === mapId) || allMaps[0] || BUILTIN_MAPS[0];
@@ -214,6 +236,17 @@ export default function App() {
       setToastMsg((prev) => (prev === msg ? null : prev));
     }, 2600);
   }, []);
+
+  /** 点「小窗」时递增：主屏趁机在用户手势里把声音打开 */
+  const [unmuteSignal, setUnmuteSignal] = useState(0);
+
+  /** 小窗的独立悬浮窗（Document PiP）：切到别的应用也能继续看 */
+  const pip = useDocumentPip({
+    width: 380,
+    height: 300,
+    // 用户用浏览器自带的「返回标签页」关掉悬浮窗时，小窗模式一起退出
+    onClosed: () => setIsMiniPlayer(false),
+  });
 
   // 业务消息统一出口：P2P 模式下交给房主，否则走云端 WebSocket。
   // 注意语音信令（webrtc:signal）不走这里 —— 它必须走云端的转发通道。
@@ -293,6 +326,8 @@ export default function App() {
   useEffect(() => {
     if (!hasEnteredRoom || manuallyDisconnected) return;
     let closedByUser = false;
+    // 换房间/重新进房是一次全新的连接机会，之前放弃过直连也重新试一次
+    p2pGaveUpRef.current = false;
     let reconnectTimer: number | null = null;
     let pingTimer: number | null = null;
 
@@ -343,11 +378,45 @@ export default function App() {
           return;
         }
 
+        // ── 房主主动关掉直连 ──────────────────────────────────────────────
+        // 服务端只允许房主发这条。收到就说明「这屋子回云端了」，正在直连的客人立刻回落，
+        // 不要等 DataChannel 自己断（那要 7 秒心跳超时）。
+        if (msg.type === 'p2p:off') {
+          // 房主主动关的，不是失败：不算「放弃直连」，房主再开回来时还要自动跟随
+          if (p2pEnabledRef.current) fallbackToCloud('房主已切回云端模式', false);
+          return;
+        }
+
+        // ── 进房时房主已经在直连 ──────────────────────────────────────────
+        // room:init 带着 linkMode，不用等房主再广播一次 p2p:host
+        // （房主在后台标签时 setInterval 会被节流，广播可能要等半分钟）。
+        if (
+          msg.type === 'room:init' &&
+          !p2pEnabledRef.current &&
+          !p2pGaveUpRef.current &&
+          msg.linkMode === 'direct' &&
+          typeof msg.hostId === 'string' &&
+          msg.hostId !== clientId
+        ) {
+          p2pHostRef.current = msg.hostId;
+          p2pEnabledRef.current = true;
+          setLinkMode('connecting');
+          startP2P('guest', clientId, msg.hostId);
+          armP2PFallback();
+        }
+
         // ── 房主宣告：即使本端是云端模式，也自动跟随到 P2P ────────────────
         // 否则「房主用 p2p=1、别人用普通链接」会变成两个世界，看起来就是「没同步」。
         if (msg.type === 'p2p:host' && typeof msg.hostId === 'string') {
           p2pHostRef.current = msg.hostId;
+          // 房主可能被别人接管过：本地 isHost 跟着服务端改，否则「切换连接方式」的入口
+          // 会留在旧房主身上，点了也发不出去（服务端只认新房主）。
+          setPlayers((prev) =>
+            prev.map((p) => (p.isHost === (p.id === msg.hostId) ? p : { ...p, isHost: p.id === msg.hostId }))
+          );
           // 云端模式下收到房主宣告 → 自动跟随到 P2P，避免一端直连一端云端（表现为「没同步」）
+          // 房主主动宣告不受「放弃直连」限制：房主刷新回来会重新宣告，
+          // 这时客人应该再试一次，而不是永远停在云端。
           if (!p2pEnabledRef.current && msg.hostId !== clientId) {
             p2pEnabledRef.current = true;
             setLinkMode('connecting');
@@ -404,11 +473,12 @@ export default function App() {
        * 关键：必须把 p2pEnabledRef 也关掉 —— 否则分流逻辑会继续丢弃云端业务消息，
        * 表现就是「显示云端，但谁都不同步」。
        */
-      function fallbackToCloud(reason: string) {
+      function fallbackToCloud(reason: string, gaveUp = true) {
         if (p2pFallbackRef.current) {
           window.clearTimeout(p2pFallbackRef.current);
           p2pFallbackRef.current = null;
         }
+        if (gaveUp) p2pGaveUpRef.current = true;
         p2pEnabledRef.current = false;
         isP2PHostRef.current = false;
         try {
@@ -448,20 +518,61 @@ export default function App() {
           showToast('还没拿到房主信息，稍等一下再试');
           return;
         }
+        p2pGaveUpRef.current = false;
         p2pEnabledRef.current = true;
         setLinkMode('connecting');
         startP2P('guest', clientId, hostId);
         armP2PFallback();
       };
 
+      /**
+       * 切换连接方式（只有房主会调）。
+       * direct：自己当房主开直连，把当前云端状态交给新房主核心，并广播 p2p:host 让客人跟过来。
+       * cloud：广播 p2p:off 让所有客人回落，然后自己也回云端重新 join 拉全量状态。
+       */
+      linkSwitchRef.current = (mode) => {
+        if (mode === 'direct') {
+          if (p2pRef.current) return;
+          setLinkModePreference('direct');
+          p2pGaveUpRef.current = false;
+          p2pEnabledRef.current = true;
+          setLinkMode('connecting');
+          startP2P('host', clientId, clientId, linkStateRef.current);
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'p2p:host' }));
+          }
+          armP2PFallback();
+          return;
+        }
+        setLinkModePreference('cloud');
+        if (ws.readyState === WebSocket.OPEN) {
+          // 先把房主核心的最新状态推给云端，再关直连：
+          // 否则云端还停在最多 5 秒前的快照，切回来视频会往回跳。
+          const state = p2pRef.current?.snapshotState();
+          if (state) ws.send(JSON.stringify({ type: 'room:snapshot', state }));
+          ws.send(JSON.stringify({ type: 'p2p:off' }));
+        }
+        if (p2pEnabledRef.current) {
+          fallbackToCloud('已切回云端模式');
+        } else {
+          setLinkMode('cloud');
+        }
+      };
+
       /** 建 P2P 会话（房主 / 客人共用），供 room:init 与 p2p:host 两条路径调用 */
-      function startP2P(role: 'host' | 'guest', selfId: string, hostId: string) {
+      function startP2P(
+        role: 'host' | 'guest',
+        selfId: string,
+        hostId: string,
+        initialState?: unknown
+      ) {
         if (p2pRef.current) return p2pRef.current;
         const room = new P2PRoom({
           roomId,
           selfId,
           hostId,
           role,
+          initialState,
           sendSignal: (targetId, signal) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: 'p2p:signal', targetId, signal }));
@@ -859,27 +970,53 @@ export default function App() {
     showToast('已断开房间连接，点「重新连接」恢复');
   };
 
-  /** 小窗 / 影院聚焦互斥：进小窗就退出聚焦，反之亦然 */
-  const handleToggleMini = useCallback(() => {
-    setIsMiniPlayer((prev) => {
-      const next = !prev;
-      if (next) setIsTheaterFocused(false);
-      return next;
-    });
-  }, []);
+  /**
+   * 底栏「小窗」= 一步到位：直接弹出系统级悬浮窗（Document PiP），不再先开页面内小窗。
+   * 只有浏览器不支持 / 开窗失败时才回落到页面内小窗，并在 toast 里说明。
+   */
+  const handleToggleMini = useCallback(async () => {
+    if (isMiniPlayer) {
+      pip.close();
+      setIsMiniPlayer(false);
+      return;
+    }
+    setIsTheaterFocused(false);
+    // 先趁手势还在，让主屏把声音打开（小窗自己开声音会被自动播放策略拦掉）
+    setUnmuteSignal((n) => n + 1);
+    // 先开窗再挂载：避免页面内小窗闪一下再跳进悬浮窗
+    const ok = await pip.open();
+    setIsMiniPlayer(true);
+    if (!ok) showToast('这个浏览器不支持独立悬浮窗，先用页面内小窗（Chrome / Edge 可弹出）');
+  }, [isMiniPlayer, pip, showToast]);
+
+  /** 页面内小窗顶栏的「独立窗口」按钮（只在回落模式里出现） */
+  const handleTogglePip = useCallback(async () => {
+    if (pip.container) {
+      pip.close();
+      return;
+    }
+    const ok = await pip.open();
+    if (!ok) showToast('当前浏览器不支持独立悬浮窗，请用 Chrome / Edge 打开');
+    else showToast('已弹出独立悬浮窗，切到别的应用也能继续看');
+  }, [pip, showToast]);
 
   const handleToggleTheaterFocus = useCallback(() => {
     setIsTheaterFocused((prev) => {
       const next = !prev;
-      if (next) setIsMiniPlayer(false);
+      if (next) {
+        setIsMiniPlayer(false);
+        pip.close();
+      }
       return next;
     });
-  }, []);
+  }, [pip]);
 
-  // 小窗刚打开时给一句提示：顶栏可拖动、✕ 收回
+  // 页面内回落模式（不支持 PiP 时）才需要这句提示
   useEffect(() => {
-    if (isMiniPlayer) showToast('已打开小窗 · 拖动顶栏可移动，点 ✕ 关闭（大屏照常在房间里播）');
-  }, [isMiniPlayer, showToast]);
+    if (isMiniPlayer && !pip.container) {
+      showToast('已打开小窗 · 拖动顶栏可移动，点 ✕ 关闭（大屏照常在房间里播）');
+    }
+  }, [isMiniPlayer, pip.container, showToast]);
 
   /**
    * 新聊天消息 → 塞进小窗气泡队列。
@@ -1011,13 +1148,11 @@ export default function App() {
     setShowEmojiMenu(false);
   };
 
-  const sendChatMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    const text = chatInput.trim();
+  /** 发一条聊天（主聊天框和悬浮窗共用）：里面贴了视频链接就顺手点播 */
+  const handleSendChatText = (raw: string) => {
+    const text = raw.trim();
     if (!text) return;
     sendGame(JSON.stringify({ type: 'player:chat', text }));
-    setChatInput('');
-    // 聊天里贴了视频链接就顺手点播：消息照常发出去，另外走一遍和点播面板一样的入队流程
     const link = detectVideoLink(text);
     if (link) {
       showToast('识别到视频链接，正在点播…');
@@ -1025,6 +1160,12 @@ export default function App() {
       // 解析要等服务端抓元信息（海外源偶尔要十几秒），期间输入框下方常驻一条状态
       void handleEnqueueUrl(link.url, link.titleHint).finally(() => setChatEnqueueing(false));
     }
+  };
+
+  const sendChatMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSendChatText(chatInput);
+    setChatInput('');
   };
 
   /** 影院组件回传 mp4 真实播放位置，供点播人上报使用 */
@@ -1375,43 +1516,109 @@ export default function App() {
               已断开
             </span>
           ) : (
-            linkMode !== 'off' && (
+            <div className="relative hidden sm:block">
               <button
                 type="button"
-                onClick={() => {
-                  if (linkMode === 'cloud') p2pRetryRef.current?.();
-                }}
-                disabled={linkMode !== 'cloud'}
+                onClick={() => setShowLinkMenu((v) => !v)}
                 title={
-                  linkMode === 'direct'
-                    ? 'P2P 直连房主，消息不经过云端'
-                    : linkMode === 'cloud'
-                      ? '直连失败，正在走云端服务器（延迟较高）· 点这里重试直连'
-                      : '正在与房主建立直连…'
+                  isRoomHost
+                    ? '连接方式：点这里切换直连 / 云端（作用于全屋）'
+                    : '连接方式由房主决定，你会自动跟随'
                 }
-                className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  linkMode === 'cloud' ? 'cursor-pointer hover:brightness-95' : ''
-                } ${
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer hover:brightness-95 ${
                   linkMode === 'direct'
                     ? 'bg-emerald-50 text-emerald-600'
-                    : linkMode === 'cloud'
-                      ? 'bg-amber-50 text-amber-600'
-                      : 'bg-zinc-100 text-zinc-500'
+                    : linkMode === 'connecting'
+                      ? 'bg-zinc-100 text-zinc-500'
+                      : 'bg-sky-50 text-sky-600'
                 }`}
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
                     linkMode === 'direct'
                       ? 'bg-emerald-500'
-                      : linkMode === 'cloud'
-                        ? 'bg-amber-500'
-                        : 'bg-zinc-400'
+                      : linkMode === 'connecting'
+                        ? 'bg-zinc-400 animate-pulse'
+                        : 'bg-sky-500'
                   }`}
                 />
-                {linkMode === 'direct' ? '直连' : linkMode === 'cloud' ? '云端 · 点击重试直连' : '连接中'}
+                {linkMode === 'direct' ? '直连' : linkMode === 'connecting' ? '连接中' : '云端'}
                 <span className="opacity-70">· {players.length}人</span>
+                <ChevronDown className="h-3 w-3 opacity-50" />
               </button>
-            )
+
+              {showLinkMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowLinkMenu(false)} />
+                  <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-zinc-200 bg-white p-2 shadow-xl">
+                    <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      连接方式
+                    </div>
+                    {(
+                      [
+                        {
+                          id: 'direct' as const,
+                          title: '直连（P2P）',
+                          desc: '房主当服务器，延迟最低；打洞失败会自动回落云端',
+                        },
+                        {
+                          id: 'cloud' as const,
+                          title: '云端',
+                          desc: '所有人走 Cloudflare 服务器，最稳，不受网络环境影响',
+                        },
+                      ]
+                    ).map((opt) => {
+                      const active =
+                        opt.id === 'direct'
+                          ? linkMode === 'direct' || linkMode === 'connecting'
+                          : linkMode === 'cloud' || linkMode === 'off';
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={!isRoomHost}
+                          onClick={() => {
+                            if (!isRoomHost) return;
+                            setShowLinkMenu(false);
+                            linkSwitchRef.current?.(opt.id);
+                          }}
+                          className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left ${
+                            isRoomHost ? 'hover:bg-zinc-50 cursor-pointer' : 'opacity-50 cursor-not-allowed'
+                          }`}
+                        >
+                          <span
+                            className={`mt-1 h-3 w-3 shrink-0 rounded-full border ${
+                              active ? 'border-zinc-900 bg-zinc-900' : 'border-zinc-300 bg-white'
+                            }`}
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-zinc-900">{opt.title}</span>
+                            <span className="block text-[10px] leading-relaxed text-zinc-500">{opt.desc}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <p className="border-t border-zinc-100 px-2 pb-1 pt-2 text-[10px] leading-relaxed text-zinc-500">
+                      {isRoomHost
+                        ? '切换立刻作用于全屋：客人会自动跟随，不用重新进房。'
+                        : '只有房主能切换。房主改了你也会自动跟随。'}
+                    </p>
+                    {!isRoomHost && linkMode === 'cloud' && p2pHostRef.current && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowLinkMenu(false);
+                          p2pRetryRef.current?.();
+                        }}
+                        className="mt-1 w-full rounded-lg bg-zinc-100 px-2 py-1.5 text-[10px] font-medium text-zinc-700 hover:bg-zinc-200 cursor-pointer"
+                      >
+                        重试直连房主
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -1437,6 +1644,13 @@ export default function App() {
             className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
           >
             像素画
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAiModal(true)}
+            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
+          >
+            AI 点播
           </button>
           <button
             type="button"
@@ -1511,8 +1725,15 @@ export default function App() {
             isTheaterFocused={isTheaterFocused}
             isMini={isMiniPlayer}
             onToggleMini={handleToggleMini}
+            pipContainer={pip.container}
+            onTogglePip={handleTogglePip}
+            pipSupported={pip.supported}
+            unmuteSignal={unmuteSignal}
             miniChat={miniChatFeed}
             onOpenChat={() => setShowChatDrawer(true)}
+            miniMessages={chatHistory}
+            onSendMiniChat={handleSendChatText}
+            onEnqueueMini={(url) => handleEnqueueUrl(url, '')}
             activeWidgets={activeWidgets}
             onMoveLocalPlayer={handleMoveLocalPlayer}
             onCarry={handleCarry}
@@ -1671,7 +1892,7 @@ export default function App() {
               className={`min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                 isMiniPlayer ? 'bg-zinc-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
               }`}
-              title={isMiniPlayer ? '关闭小窗' : '小窗播放：边逛边看'}
+              title={isMiniPlayer ? '关闭小窗' : '弹出悬浮小窗（切到别的应用也能看）'}
             >
               <PictureInPicture2 className="w-4 h-4" />
               <span className="hidden sm:inline">小窗</span>
@@ -1805,6 +2026,16 @@ export default function App() {
         onHang={handleHangArt}
       />
 
+      <AiDirectorModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        videoState={videoState}
+        onVideoControl={handleVideoControl}
+        onSkipNext={handleSkipNext}
+        onEnqueueUrl={handleEnqueueUrl}
+        showToast={showToast}
+      />
+
       <AvatarEditorModal
         isOpen={showAvatarModal}
         isInitialLobby={!hasEnteredRoom}
@@ -1831,6 +2062,10 @@ export default function App() {
         onSkipCurrent={handleSkipNext}
         onJumpToItem={handleJumpToItem}
         onClose={() => setShowQueueDrawer(false)}
+        onOpenAi={() => {
+          setShowQueueDrawer(false);
+          setShowAiModal(true);
+        }}
         onEnqueueUrl={handleEnqueueUrl}
         onRemoveFromQueue={handleRemoveFromQueue}
         onReplayHistory={(item) => handleEnqueueUrl(item.url, item.title, item)}

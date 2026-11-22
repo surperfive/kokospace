@@ -1,4 +1,7 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { NPC, npcPoseAt, type NpcPose } from '../lib/npc';
+import { compileRig, drawRig, poseBones, type CompiledRig } from '../lib/sipiqiRig';
 import {
   AvatarConfig,
   FloatingReaction,
@@ -54,6 +57,10 @@ interface MetaverseCanvasProps {
   /** 小窗里飘过的聊天气泡 */
   miniChat?: { id: string; name: string; text: string }[];
   onOpenChat?: () => void;
+  /** 小窗窗内聊天 / 点播 */
+  miniMessages?: { id: string; playerName: string; text: string; isSystem?: boolean }[];
+  onSendMiniChat?: (text: string) => void;
+  onEnqueueMini?: (url: string) => Promise<void> | void;
   activeWidgets: StageWidgetPlugin[];
   onMoveLocalPlayer: (next: {
     x: number;
@@ -81,6 +88,12 @@ interface MetaverseCanvasProps {
   /** 当前用户是否是点播人（不是就只能看） */
   canControlProgress?: boolean;
   canSkip?: boolean;
+  /** 独立悬浮窗（Document PiP）的挂载点：非空时小窗搬进那个 document */
+  pipContainer?: HTMLElement | null;
+  onTogglePip?: () => void;
+  pipSupported?: boolean;
+  /** 递增信号：点「小窗」时主屏在用户手势里把声音打开 */
+  unmuteSignal?: number;
   skipStepSec?: number;
   autoSkipOutroSec?: number;
   onProximityUpdate?: (nearbyCount: number, inStageZone: boolean) => void;
@@ -104,6 +117,9 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   onToggleMini,
   miniChat,
   onOpenChat,
+  miniMessages,
+  onSendMiniChat,
+  onEnqueueMini,
   activeWidgets,
   onMoveLocalPlayer,
   onCarry,
@@ -118,6 +134,10 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   onSkipNext,
   canControlProgress = true,
   canSkip = canControlProgress,
+  pipContainer = null,
+  onTogglePip,
+  pipSupported = false,
+  unmuteSignal = 0,
   skipStepSec = 30,
   autoSkipOutroSec = 0,
   onProximityUpdate,
@@ -232,6 +252,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     chatBubbles,
     joystickVector,
     zoom,
+    serverTimeOffsetMs,
     onMoveLocalPlayer,
     onCarry,
     onProximityUpdate,
@@ -248,6 +269,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     chatBubbles,
     joystickVector,
     zoom,
+    serverTimeOffsetMs,
     onMoveLocalPlayer,
     onCarry,
     onProximityUpdate,
@@ -436,6 +458,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         chatBubbles: bubbles,
         joystickVector: joy,
         zoom: currentZoom,
+        serverTimeOffsetMs: clockOffsetMs,
         onMoveLocalPlayer: emitMove,
         onProximityUpdate: emitProx,
       } = latestPropsRef.current;
@@ -774,11 +797,21 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             ctx.restore();
           };
 
+          // 房间共识时间：所有人算出来的 NPC 帧号一致
+          const npcElapsedMs = Date.now() - (Number(clockOffsetMs) || 0);
+          let npcDrawn = false;
+
           for (const p of renderList) {
             // 被扛的人留到最后画，保证压在扛人者身上而不是被挡住
             if (p.carriedBy) continue;
+            // NPC 按自己的 y 插进玩家序列：站在她前面的玩家能挡住她，反之亦然
+            if (!npcDrawn && NPC.y < p.y) {
+              npcDrawn = true;
+              drawNpc(ctx, npcElapsedMs);
+            }
             drawPlayer(p);
           }
+          if (!npcDrawn) drawNpc(ctx, npcElapsedMs);
           for (const p of renderList) {
             if (!p.carriedBy) continue;
             const carrier = renderList.find((c) => c.id === p.carriedBy);
@@ -879,6 +912,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         accentColor={mapTheme.palette.accent}
         frameColor={mapTheme.palette.screenFrame}
         isTheaterFocused={isTheaterFocused}
+        deferMedia={isMini}
+        unmuteSignal={unmuteSignal}
         onToggleTheaterFocus={onToggleTheaterFocus}
         onOpenQueue={onOpenQueue}
         onVideoControl={onVideoControl}
@@ -897,33 +932,44 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
        * 小窗：和大屏是两个独立实例（同一个节点不可能同时在两个位置）。
        * 小窗静音、不上报播放进度、不处理播完事件，权威时间仍然只由大屏那个负责。
        */}
-      {isMini && (
-        <CentralCinemaScreen
-          videoState={videoState}
-          serverTimeOffsetMs={serverTimeOffsetMs}
-          screenWorldRect={screenLayout}
-          camera={{ x: camera.x, y: camera.y, zoom }}
-          viewport={viewport}
-          accentColor={mapTheme.palette.accent}
-          frameColor={mapTheme.palette.screenFrame}
-          isTheaterFocused={false}
-          isMini
-          silent
-          onToggleMini={onToggleMini}
-          onToggleTheaterFocus={onToggleTheaterFocus}
-          miniChat={miniChat}
-          onOpenChat={onOpenChat}
-          onOpenQueue={onOpenQueue}
-          onVideoControl={onVideoControl}
-          hasNext={hasNext}
-          onSkipNext={onSkipNext}
-          canControlProgress={canControlProgress}
-          canSkip={canSkip}
-          skipStepSec={skipStepSec}
-          autoSkipOutroSec={autoSkipOutroSec}
-          activeWidgets={[]}
-        />
-      )}
+      {isMini &&
+        (() => {
+          const miniScreen = (
+            <CentralCinemaScreen
+              videoState={videoState}
+              serverTimeOffsetMs={serverTimeOffsetMs}
+              screenWorldRect={screenLayout}
+              camera={{ x: camera.x, y: camera.y, zoom }}
+              viewport={viewport}
+              accentColor={mapTheme.palette.accent}
+              frameColor={mapTheme.palette.screenFrame}
+              isTheaterFocused={false}
+              isMini
+              silent
+              pipMode={Boolean(pipContainer)}
+              onTogglePip={onTogglePip}
+              pipSupported={pipSupported}
+              onToggleMini={onToggleMini}
+              onToggleTheaterFocus={onToggleTheaterFocus}
+              miniChat={miniChat}
+              onOpenChat={onOpenChat}
+              miniMessages={miniMessages}
+              onSendMiniChat={onSendMiniChat}
+              onEnqueueMini={onEnqueueMini}
+              onOpenQueue={onOpenQueue}
+              onVideoControl={onVideoControl}
+              hasNext={hasNext}
+              onSkipNext={onSkipNext}
+              canControlProgress={canControlProgress}
+              canSkip={canSkip}
+              skipStepSec={skipStepSec}
+              autoSkipOutroSec={autoSkipOutroSec}
+              activeWidgets={[]}
+            />
+          );
+          // 独立悬浮窗开着时，小窗整个搬进那个 document；否则照旧贴在页面右下角
+          return pipContainer ? createPortal(miniScreen, pipContainer) : miniScreen;
+        })()}
 
       {/* Floating Emoji Reactions Overlay */}
       <div className="pointer-events-none fixed inset-0 z-20 overflow-hidden">
@@ -1139,6 +1185,109 @@ function getArtImage(src: string): HTMLImageElement | null {
   img.src = src;
   artImageCache.set(src, img);
   return null;
+}
+
+/**
+ * 固定 NPC 的精灵表：模块级只加载一次。
+ * 帧序列由 `npcFrameFor()` 用房间共识时间算，所以所有人看到的是同一拍。
+ */
+let npcImage: HTMLImageElement | null = null;
+let npcImageReady = false;
+function getNpcImage(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null;
+  if (!npcImage) {
+    npcImage = new Image();
+    npcImage.onload = () => {
+      npcImageReady = true;
+    };
+    npcImage.src = NPC.sheet;
+  }
+  return npcImageReady ? npcImage : null;
+}
+
+/**
+ * 真骨骼驱动：角色由 `sipiqi_rig.svg` + 每帧的骨骼变换实时画出来，
+ * 不用再按帧查表。雪碧图仍然保留，作为 SVG 还没编译完时的兜底。
+ */
+let rigCompiled: CompiledRig | null = null;
+let rigLoading = false;
+function ensureRig() {
+  if (rigCompiled || rigLoading || typeof fetch === 'undefined') return;
+  rigLoading = true;
+  fetch(NPC.rig)
+    .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+    .then((text) => {
+      rigCompiled = compileRig(text);
+      // 便于排查：编译了多少个图元（0 = 没编译成功，会退回雪碧图）
+      document.body.dataset.npcRig = String(rigCompiled.parts.length);
+    })
+    .catch(() => {
+      rigLoading = false;
+    });
+}
+
+function drawNpc(ctx: CanvasRenderingContext2D, elapsedMs: number): NpcPose {
+  const pose = npcPoseAt(elapsedMs);
+  const w = NPC.size;
+  const h = NPC.size;
+  const px = pose.x;
+  const py = pose.y;
+
+  ensureRig();
+  const rig = rigCompiled;
+
+  // 地面软阴影：爬行时压扁一点，停下时圆一点
+  ctx.save();
+  ctx.fillStyle = 'rgba(24, 24, 27, 0.13)';
+  ctx.beginPath();
+  const baseRy = pose.state === 'idle' ? 0.09 : 0.075;
+  ctx.ellipse(px, py + 2, w * 0.3, w * baseRy * (rig ? 1 : 1), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (rig) {
+    const bones = poseBones(pose.state, pose.theta, pose.facing, pose.blink);
+    drawRig(ctx, rig, bones, px, py, w / rig.viewBox.w);
+  } else {
+    const img = getNpcImage();
+    if (img) {
+      ctx.save();
+      // 朝左时绕自己的脚底中心镜像，位置不跳
+      if (pose.facing === -1) {
+        ctx.translate(px, 0);
+        ctx.scale(-1, 1);
+        ctx.translate(-px, 0);
+      }
+      ctx.drawImage(
+        img,
+        pose.frame * NPC.framePx,
+        pose.row * NPC.framePx,
+        NPC.framePx,
+        NPC.framePx,
+        px - w / 2,
+        py - h + h * 0.05,
+        w,
+        h
+      );
+      ctx.restore();
+    }
+  }
+
+  // 名字：比玩家淡一档，加个浅底避免压在头发上看不清
+  ctx.save();
+  ctx.font = '600 10px "Plus Jakarta Sans", "PingFang SC", sans-serif';
+  ctx.textAlign = 'center';
+  const labelY = py - h * 0.78;
+  const tw = ctx.measureText(NPC.name).width;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
+  ctx.beginPath();
+  ctx.roundRect(px - tw / 2 - 4, labelY - 9, tw + 8, 14, 7);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(24, 24, 27, 0.62)';
+  ctx.fillText(NPC.name, px, labelY + 1);
+  ctx.restore();
+
+  return pose;
 }
 
 function drawFurnitureItem(ctx: CanvasRenderingContext2D, item: FurnitureItem) {

@@ -46,6 +46,12 @@ export interface P2PRoomOptions {
    * 因为服务端 RoomCore 只认指令，收到广播会当作未知消息丢掉。
    */
   onMirrorCommand?: (json: string) => void;
+  /**
+   * 房主专用：启动时用这份状态初始化核心，而不是读 localStorage。
+   * 「云端 → 直连」切换时用它把当前房间内容带过来，否则房主会拿一份旧存档开局，
+   * 全屋人的视频进度和布置会跳回上次直连时的样子。
+   */
+  initialState?: unknown;
 }
 
 const DC_LABEL = 'koko-state';
@@ -91,7 +97,15 @@ export class P2PRoom {
   start(joinMessage: Record<string, any>) {
     this.joinMsg = joinMessage;
     if (this.opts.role === 'host') {
-      this.restoreHostState();
+      if (this.opts.initialState) {
+        try {
+          this.core!.restoreState(this.opts.initialState as any);
+        } catch {
+          this.restoreHostState();
+        }
+      } else {
+        this.restoreHostState();
+      }
       this.apply(this.core!.join(this.opts.selfId, joinMessage));
       this.startPersisting();
       // 立刻镜像一次：否则进房头 5 秒内房主掉线，接管的人会看到空房间
@@ -421,6 +435,11 @@ export class P2PRoom {
     }
   }
 
+  /** 房主：导出当前权威状态。切回云端前推一次，避免云端状态比现场落后 5 秒 */
+  snapshotState(): unknown {
+    return this.opts.role === 'host' && this.core ? this.core.exportState() : null;
+  }
+
   close() {
     this.closed = true;
     if (this.persistTimer) {
@@ -452,9 +471,38 @@ export class P2PRoom {
   }
 }
 
-/** 是否启用 P2P（URL 上带 p2p=1） */
+/**
+ * 是否启用 P2P。
+ * 优先级：URL 显式指定 > 本地偏好 > 默认云端。
+ * URL 上 `p2p=1` / `p2p=0` 保留给分享链接和排查用；用户在界面上切过一次之后，
+ * 写进 localStorage 并同步改 URL，刷新不会跳回原来的模式。
+ */
 export function isP2PEnabled(): boolean {
   if (typeof window === 'undefined') return false;
-  const params = new URLSearchParams(window.location.search);
-  return params.get('p2p') === '1';
+  const param = new URLSearchParams(window.location.search).get('p2p');
+  if (param === '1') return true;
+  if (param === '0') return false;
+  try {
+    return localStorage.getItem('koko_link_mode') === 'direct';
+  } catch {
+    return false;
+  }
+}
+
+/** 记住用户选的连接方式，并把 URL 上的 p2p 参数改成一致（分享出去的链接也一致） */
+export function setLinkModePreference(mode: 'cloud' | 'direct'): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('koko_link_mode', mode);
+  } catch {
+    /* 隐私模式忽略 */
+  }
+  try {
+    const url = new URL(window.location.href);
+    if (mode === 'direct') url.searchParams.set('p2p', '1');
+    else url.searchParams.delete('p2p');
+    window.history.replaceState(null, '', url.toString());
+  } catch {
+    /* ignore */
+  }
 }

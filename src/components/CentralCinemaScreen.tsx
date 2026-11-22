@@ -16,6 +16,7 @@ import {
   Loader2,
   AlertTriangle,
   RotateCcw,
+  PictureInPicture2,
   X,
   MessageCircle,
 } from 'lucide-react';
@@ -34,12 +35,35 @@ interface CentralCinemaScreenProps {
   /** 小窗模式：巨幕缩成可拖动的浮窗，走动时也能看。与影院聚焦互斥 */
   isMini?: boolean;
   onToggleMini?: () => void;
+  /** 小窗被搬进系统级悬浮窗（Document PiP）时：铺满那个窗口，不再自己定位/拖动 */
+  pipMode?: boolean;
+  /** 把当前小窗弹出成独立悬浮窗 / 收回页面 */
+  onTogglePip?: () => void;
+  pipSupported?: boolean;
+  /**
+   * 画面让给小窗：小窗开着时为 true。
+   * B 站 iframe 没法静音，同一时刻只能有一个实例在播，所以大屏这边退化成封面。
+   * mp4/hls/YouTube/内置动画不受影响（大屏照常播）。
+   */
+  deferMedia?: boolean;
   /** 小窗镜像：静音起播，且不上报播放进度 / 不处理播完事件（避免和大屏重复触发） */
   silent?: boolean;
+  /**
+   * 递增信号：点「小窗」时由 App 递增，主屏据此**在用户手势的同一拍里**把声音打开。
+   * 不能靠小窗自己开声音 —— 小窗元素是在 await requestWindow 之后才挂载的，
+   * 用户激活已经失效，浏览器必拦。
+   */
+  unmuteSignal?: number;
   /** 小窗里飘过的聊天气泡（新消息短暂出现后消散） */
   miniChat?: { id: string; name: string; text: string }[];
   /** 小窗左下角「发言」：打开聊天面板 */
   onOpenChat?: () => void;
+  /** 窗内聊天要用的完整消息列表（最近若干条） */
+  miniMessages?: { id: string; playerName: string; text: string; isSystem?: boolean }[];
+  /** 从悬浮窗直接发言 */
+  onSendMiniChat?: (text: string) => void;
+  /** 从悬浮窗直接点播（传链接，内部复用点播解析流程） */
+  onEnqueueMini?: (url: string) => Promise<void> | void;
   onOpenQueue: () => void;
   onVideoControl: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
   /** 当前用户是否是点播人：不是就只能看，进度条与播放键禁用 */
@@ -72,10 +96,19 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   onToggleTheaterFocus,
   isMini = false,
   onToggleMini,
+  pipMode = false,
+  onTogglePip,
+  pipSupported = false,
+  deferMedia = false,
   /** 小窗镜像：静音起播、不参与控片与进度上报 */
   silent = false,
+  unmuteSignal = 0,
   miniChat = [],
   onOpenChat,
+  /** 窗内聊天：完整消息列表 + 发送；以及窗内点播（传链接直接入队） */
+  miniMessages = [],
+  onSendMiniChat,
+  onEnqueueMini,
   onOpenQueue,
   onVideoControl,
   canControlProgress = true,
@@ -93,13 +126,21 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   const builtinCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
 
+  /**
+   * 触屏设备（手机/平板）：浏览器的"带声音自动播放"基本全拦，连 muted 属性都要在元素
+   * 创建前就带上 iOS 才认。所以移动端**一律静音起播**，画面先动起来，声音交给
+   * 左下角「点这里开声音」补一次 —— 这比让人对着黑屏点播放强得多。
+   */
+  const prefersMutedAutoplay =
+    typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+
   /** 小窗镜像永远静音起播：声音由房间里的大屏负责，两个播放器同时出声会有回声 */
-  const [muted, setMuted] = useState(silent);
+  const [muted, setMuted] = useState(silent || prefersMutedAutoplay);
   /**
    * 浏览器自动播放策略会拦「带声音的自动播放」。中途进房/新点播时我们会降级成静音起播，
    * 画面照常走但不该让用户以为坏了 —— 用它驱动一个「点一下开声音」的浮层。
    */
-  const [autoplayMuted, setAutoplayMuted] = useState(false);
+  const [autoplayMuted, setAutoplayMuted] = useState(prefersMutedAutoplay && !silent);
   /** 房间在播、本地却被浏览器拦下：超过几秒仍没动就露出「点一下」兜底 */
   const [localStuck, setLocalStuck] = useState(false);
   const [volume, setVolume] = useState<number>(() => {
@@ -135,6 +176,24 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
     originY: number;
   } | null>(null);
   const miniBoxRef = useRef<HTMLDivElement | null>(null);
+
+  /** 小窗里的窗内面板：'chat' 聊天 / 'queue' 点播。悬浮窗脱离页面后，
+   *  主页面的抽屉在另一个窗口里根本看不见，所以这两件事必须在窗内做完。 */
+  const [miniPanel, setMiniPanel] = useState<'chat' | 'queue' | null>(null);
+  const [miniChatDraft, setMiniChatDraft] = useState('');
+  const [miniQueueDraft, setMiniQueueDraft] = useState('');
+  const [miniEnqueuing, setMiniEnqueuing] = useState(false);
+  const [miniEnqueueMsg, setMiniEnqueueMsg] = useState<string | null>(null);
+  const [miniSeenChat, setMiniSeenChat] = useState(() => miniMessages.length);
+  const miniChatListRef = useRef<HTMLDivElement | null>(null);
+
+  // 聊天面板打开 / 来新消息时：清掉未读、滚到最新一条
+  useEffect(() => {
+    if (miniPanel !== 'chat') return;
+    setMiniSeenChat(miniMessages.length);
+    const el = miniChatListRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [miniPanel, miniMessages.length]);
 
   const item = videoState.currentItem;
   const isHls = item.sourceType === 'hls';
@@ -194,6 +253,28 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
       /* ignore */
     }
   }, [item.id, sendYouTubeCmd]);
+
+  /** 点「小窗」时由 App 递增：立刻把主屏的声音打开（用户手势还在，浏览器不会拦） */
+  const lastUnmuteSignalRef = useRef(unmuteSignal);
+  useEffect(() => {
+    if (unmuteSignal === lastUnmuteSignalRef.current) return;
+    lastUnmuteSignalRef.current = unmuteSignal;
+    if (silent) return; // 小窗镜像本身不出声
+    const el = videoRef.current;
+    setMuted(false);
+    setAutoplayMuted(false);
+    if (el) {
+      el.muted = false;
+      if (el.volume === 0) el.volume = 0.8;
+      if (videoState.isPlaying && el.paused) el.play().catch(() => {});
+    }
+    if (isYouTube) {
+      sendYouTubeCmd('setVolume', [Math.round((volume || 0.8) * 100)]);
+      sendYouTubeCmd('unMute');
+      if (videoState.isPlaying) sendYouTubeCmd('playVideo');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unmuteSignal]);
 
   const getExpectedTime = () => {
     if (!videoState.isPlaying) return videoState.currentTime;
@@ -936,7 +1017,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
     miniDragRef.current = null;
   };
 
-  const containerStyle: React.CSSProperties = isMini
+  const containerStyle: React.CSSProperties = pipMode
+    ? { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: 1 }
+    : isMini
     ? {
         position: 'fixed',
         left: miniPos ? `${miniPos.x}px` : undefined,
@@ -1053,6 +1136,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   const showBottomControls =
     item.sourceType === 'builtin' || isVideoStream || isYouTube;
 
+  /** 大屏把 B 站画面让给小窗（小窗那边的 iframe 才是唯一解，避免双重出声） */
+  const deferBiliIframe = !isMini && deferMedia && item.sourceType === 'bilibili';
+
   return (
     <>
       {isTheaterFocused && (
@@ -1068,18 +1154,20 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
           backgroundColor: frameColor,
         }}
         className={`group overflow-hidden flex flex-col select-none ${
-          isMini
+          pipMode
+            ? 'rounded-none border-0 shadow-none'
+            : isMini
             ? 'rounded-xl border-2 border-zinc-900 shadow-xl'
             : 'rounded-2xl border-4 border-zinc-900 shadow-2xl transition-[box-shadow] duration-200'
         } ${isTheaterFocused ? 'ring-4 ring-white/20' : ''}`}
       >
         {/* Top Screen Header Strip（小窗模式下整条就是拖动把手） */}
         <div
-          onPointerDown={isMini ? handleMiniPointerDown : undefined}
-          onPointerMove={isMini ? handleMiniPointerMove : undefined}
-          onPointerUp={isMini ? endMiniDrag : undefined}
-          onPointerCancel={isMini ? endMiniDrag : undefined}
-          style={isMini ? { touchAction: 'none', cursor: 'grab' } : undefined}
+          onPointerDown={isMini && !pipMode ? handleMiniPointerDown : undefined}
+          onPointerMove={isMini && !pipMode ? handleMiniPointerMove : undefined}
+          onPointerUp={isMini && !pipMode ? endMiniDrag : undefined}
+          onPointerCancel={isMini && !pipMode ? endMiniDrag : undefined}
+          style={isMini && !pipMode ? { touchAction: 'none', cursor: 'grab' } : undefined}
           className={`flex items-center justify-between gap-2 bg-zinc-900/95 text-white text-xs shrink-0 border-b border-white/10 ${
             isMini ? 'px-2 py-1' : 'px-3 py-1.5'
           }`}
@@ -1141,19 +1229,31 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             )}
             {isMini ? (
               <>
-                <button
-                  type="button"
-                  onClick={onToggleTheaterFocus}
-                  className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                  title="放大为影院视图"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
+                {!pipMode && pipSupported && (
+                  <button
+                    type="button"
+                    onClick={() => onTogglePip?.()}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                    title="弹出独立悬浮窗（切到别的应用也能看）"
+                  >
+                    <PictureInPicture2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {!pipMode && (
+                  <button
+                    type="button"
+                    onClick={onToggleTheaterFocus}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                    title="放大为影院视图"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => onToggleMini?.()}
                   className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                  title="收起小窗，回到房间里的巨幕"
+                  title={pipMode ? '关闭小窗' : '收起小窗，回到房间里的巨幕'}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1215,7 +1315,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                      * 被拦之后还要多走一次「拒绝 → 降级静音 → 重播」，画面会先停一下。
                      * 干脆一开始就静音起播，保证零点击就有画面；声音交给左下角浮层一键恢复。
                      */
-                    if (expected > 3 && videoState.isPlaying) {
+                    if ((expected > 3 || prefersMutedAutoplay) && videoState.isPlaying) {
                       el.muted = true;
                       setMuted(true);
                       setAutoplayMuted(true);
@@ -1277,7 +1377,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             />
           )}
 
-          {(isYouTube || item.sourceType === 'bilibili') && !(silent && item.sourceType === 'bilibili') && (
+          {(isYouTube || item.sourceType === 'bilibili') && !deferBiliIframe && (
             <iframe
               key={`${item.id}-${iframeSrc}-${retryNonce}`}
               ref={isYouTube ? iframeRef : undefined}
@@ -1296,10 +1396,11 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
           )}
 
           {/*
-           * B 站播放器是黑盒，没法静音也没法被脚本控制：两个 iframe 同时播会双重出声。
-           * 所以小窗里对 B 站只放封面，声音和画面都留在房间的大屏上。
+           * B 站播放器是黑盒：没法静音、没法脚本控制，两个 iframe 同时播会双重出声。
+           * 所以同一时刻只允许一个 B 站 iframe 活着 —— 小窗开着时画面让给小窗，
+           * 大屏这边保留画框但不再加载播放器（不然会有回声）。
            */}
-          {silent && item.sourceType === 'bilibili' && (
+          {deferBiliIframe && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-zinc-950 text-center px-3">
               {item.thumbnail && (
                 <img
@@ -1312,9 +1413,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                   }}
                 />
               )}
-              <div className="relative text-[11px] font-medium text-white/90">B 站视频在小窗不可用</div>
+              <div className="relative text-[11px] font-medium text-white/90">B 站画面在小窗播放</div>
               <div className="relative text-[10px] leading-tight text-white/60">
-                播放器无法静音，两个窗口会双重出声
+                B 站播放器不能被静音，同时开两个会有回声 —— 点小窗的 ✕ 就能回到这里播
               </div>
             </div>
           )}
@@ -1452,29 +1553,178 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             </button>
           )}
 
-          {/* 小窗专属：左下角快捷操作 + 右下角飘过的聊天气泡 */}
+          {/* 小窗专属：左下角两个按钮打开**窗内**面板（悬浮窗里主页面的抽屉是看不见的） */}
           {isMini && (
             <>
-              <div className="absolute left-1.5 bottom-1.5 z-20 flex items-center gap-1.5">
+              <div className="absolute left-1.5 bottom-1.5 z-30 flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={onOpenQueue}
-                  className="w-7 h-7 rounded-md bg-black/20 hover:bg-black/45 active:bg-black/60 text-white/90 flex items-center justify-center backdrop-blur-md ring-1 ring-white/20 cursor-pointer transition-colors"
-                  title="点播：打开片单"
-                  aria-label="点播：打开片单"
+                  onClick={() => setMiniPanel((p) => (p === 'queue' ? null : 'queue'))}
+                  className={`w-7 h-7 rounded-md flex items-center justify-center backdrop-blur-md ring-1 ring-white/20 cursor-pointer transition-colors ${
+                    miniPanel === 'queue'
+                      ? 'bg-[#FF5A36] text-white'
+                      : 'bg-black/25 hover:bg-black/50 active:bg-black/60 text-white/90'
+                  }`}
+                  title="点播：在这里贴链接直接入队"
+                  aria-label="点播"
                 >
                   <ListVideo className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
-                  onClick={() => onOpenChat?.()}
-                  className="w-7 h-7 rounded-md bg-black/20 hover:bg-black/45 active:bg-black/60 text-white/90 flex items-center justify-center backdrop-blur-md ring-1 ring-white/20 cursor-pointer transition-colors"
-                  title="发言 / 看聊天记录"
-                  aria-label="发言 / 看聊天记录"
+                  onClick={() => setMiniPanel((p) => (p === 'chat' ? null : 'chat'))}
+                  className={`relative w-7 h-7 rounded-md flex items-center justify-center backdrop-blur-md ring-1 ring-white/20 cursor-pointer transition-colors ${
+                    miniPanel === 'chat'
+                      ? 'bg-[#FF5A36] text-white'
+                      : 'bg-black/25 hover:bg-black/50 active:bg-black/60 text-white/90'
+                  }`}
+                  title="聊天：看消息、直接发言"
+                  aria-label="聊天"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
+                  {miniPanel !== 'chat' && miniMessages.length > miniSeenChat && (
+                    <span className="absolute -top-1 -right-1 min-w-[12px] h-3 px-[3px] rounded-full bg-[#FF5A36] text-white text-[9px] font-bold leading-3 text-center">
+                      {Math.min(9, miniMessages.length - miniSeenChat)}
+                    </span>
+                  )}
                 </button>
               </div>
+
+              {/* 窗内聊天面板（右侧一条，左侧画面继续可见） */}
+              {miniPanel === 'chat' && (
+                <div className="absolute right-0 top-0 bottom-0 z-40 w-[62%] max-w-[300px] min-w-[168px] flex flex-col bg-zinc-950/93 backdrop-blur-sm text-white border-l border-white/15 shadow-[-10px_0_18px_rgba(0,0,0,0.35)]">
+                  <div className="flex items-center justify-between px-2 py-1 border-b border-white/10 shrink-0">
+                    <span className="text-[11px] font-medium">聊天</span>
+                    <button
+                      type="button"
+                      onClick={() => setMiniPanel(null)}
+                      className="p-1 rounded hover:bg-white/15 cursor-pointer"
+                      aria-label="收起聊天"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div
+                    ref={miniChatListRef}
+                    className="flex-1 overflow-y-auto px-2 py-1.5 space-y-1 text-[11px] leading-snug"
+                  >
+                    {miniMessages.length === 0 && (
+                      <div className="text-[10px] text-white/40">还没有人说话，说点什么吧</div>
+                    )}
+                    {miniMessages.map((m) => (
+                      <div key={m.id} className={m.isSystem ? 'text-white/45 text-[10px]' : ''}>
+                        {!m.isSystem && (
+                          <span className="mr-1 font-medium" style={{ color: accentColor }}>
+                            {m.playerName}
+                          </span>
+                        )}
+                        <span className="break-words">{m.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const text = miniChatDraft.trim();
+                      if (!text) return;
+                      onSendMiniChat?.(text);
+                      setMiniChatDraft('');
+                      setMiniSeenChat(miniMessages.length + 1);
+                    }}
+                    className="flex items-center gap-1 p-1.5 border-t border-white/10 shrink-0"
+                  >
+                    <input
+                      value={miniChatDraft}
+                      onChange={(e) => setMiniChatDraft(e.target.value)}
+                      placeholder="说点什么…"
+                      className="flex-1 min-w-0 px-2 py-1 rounded-md bg-white/10 text-[11px] text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-[#FF5A36]/60"
+                    />
+                    <button
+                      type="submit"
+                      className="px-2 py-1 rounded-md bg-[#FF5A36] hover:bg-[#E84B28] text-[11px] font-semibold cursor-pointer shrink-0"
+                    >
+                      发送
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* 窗内点播面板（同样只占右侧） */}
+              {miniPanel === 'queue' && (
+                <div className="absolute right-0 top-0 bottom-0 z-40 w-[68%] max-w-[320px] min-w-[176px] flex flex-col bg-zinc-950/93 backdrop-blur-sm text-white border-l border-white/15 shadow-[-10px_0_18px_rgba(0,0,0,0.35)] px-2 py-1.5 gap-1.5">
+                  <div className="flex items-center justify-between shrink-0">
+                    <span className="text-[11px] font-medium">点播</span>
+                    <button
+                      type="button"
+                      onClick={() => setMiniPanel(null)}
+                      className="p-1 rounded hover:bg-white/15 cursor-pointer"
+                      aria-label="收起点播"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const url = miniQueueDraft.trim();
+                      if (!url || miniEnqueuing) return;
+                      setMiniEnqueuing(true);
+                      setMiniEnqueueMsg('解析中…');
+                      try {
+                        // 解析要等服务器抓元信息，网络差时可能很久 —— 别让按钮永远转着
+                        await Promise.race([
+                          Promise.resolve(onEnqueueMini?.(url)),
+                          new Promise((_, reject) =>
+                            window.setTimeout(() => reject(new Error('timeout')), 15000)
+                          ),
+                        ]);
+                        setMiniQueueDraft('');
+                        setMiniEnqueueMsg('已加入队列');
+                      } catch (err) {
+                        setMiniEnqueueMsg(
+                          (err as Error)?.message === 'timeout'
+                            ? '还在解析（网络较慢），稍后到片单里看'
+                            : '点播失败，换条链接试试'
+                        );
+                      } finally {
+                        setMiniEnqueuing(false);
+                      }
+                    }}
+                    className="flex items-center gap-1 shrink-0"
+                  >
+                    <input
+                      value={miniQueueDraft}
+                      onChange={(e) => setMiniQueueDraft(e.target.value)}
+                      placeholder="贴 B 站 / YouTube / 视频链接"
+                      className="flex-1 min-w-0 px-2 py-1 rounded-md bg-white/10 text-[11px] text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-[#FF5A36]/60"
+                    />
+                    <button
+                      type="submit"
+                      disabled={miniEnqueuing}
+                      className="px-2 py-1 rounded-md bg-[#FF5A36] hover:bg-[#E84B28] disabled:opacity-50 text-[11px] font-semibold cursor-pointer shrink-0"
+                    >
+                      {miniEnqueuing ? '…' : '点播'}
+                    </button>
+                  </form>
+                  <div className="text-[10px] text-white/50 leading-snug min-h-[12px]">
+                    {miniEnqueueMsg ?? '支持 B 站链接、YouTube、mp4 直链'}
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-1 text-[11px]">
+                    {videoState.queue.map((q, i) => (
+                      <div
+                        key={q.id}
+                        className={`truncate ${q.id === videoState.currentItem.id ? 'text-[#FFAD8F]' : 'text-white/75'}`}
+                        title={q.title}
+                      >
+                        {i + 1}. {q.title}
+                      </div>
+                    ))}
+                    {videoState.queue.length === 0 && (
+                      <div className="text-[10px] text-white/40">队列是空的</div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* 容器底边固定，新消息贴着底部出现、旧消息在上方消散，移除时不会把下面的顶走 */}
               <div className="absolute right-1.5 bottom-1.5 z-20 flex flex-col items-end gap-1 max-w-[64%] pointer-events-none">
