@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NPC, npcPoseAt, type NpcPose } from '../lib/npc';
 import { drawRig, getRig, poseBones } from '../lib/sipiqiRig';
@@ -797,21 +797,22 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             ctx.restore();
           };
 
-          // 房间共识时间：所有人算出来的 NPC 帧号一致
+          // 房间共识时间：所有人算出来的 NPC 位置与动作一致
           const npcElapsedMs = Date.now() - (Number(clockOffsetMs) || 0);
+          const npcPose = npcPoseAt(npcElapsedMs);
           let npcDrawn = false;
 
           for (const p of renderList) {
             // 被扛的人留到最后画，保证压在扛人者身上而不是被挡住
             if (p.carriedBy) continue;
-            // NPC 按自己的 y 插进玩家序列：站在她前面的玩家能挡住她，反之亦然
-            if (!npcDrawn && NPC.y < p.y) {
+            // NPC 按实时 y 插进玩家序列：站在她前面的玩家能挡住她，反之亦然
+            if (!npcDrawn && npcPose.y < p.y) {
               npcDrawn = true;
-              drawNpc(ctx, npcElapsedMs);
+              drawNpc(ctx, npcPose, npcElapsedMs);
             }
             drawPlayer(p);
           }
-          if (!npcDrawn) drawNpc(ctx, npcElapsedMs);
+          if (!npcDrawn) drawNpc(ctx, npcPose, npcElapsedMs);
           for (const p of renderList) {
             if (!p.carriedBy) continue;
             const carrier = renderList.find((c) => c.id === p.carriedBy);
@@ -1224,27 +1225,47 @@ function useRig() {
   }
 }
 
-function drawNpc(ctx: CanvasRenderingContext2D, elapsedMs: number): NpcPose {
-  const pose = npcPoseAt(elapsedMs);
+function drawNpc(ctx: CanvasRenderingContext2D, pose: NpcPose, elapsedMs: number): NpcPose {
   const w = NPC.size;
   const h = NPC.size;
   const px = pose.x;
   const py = pose.y;
 
   const rig = useRig();
+  const bones = rig ? poseBones(pose.state, pose.theta, pose.facing, pose.blink) : null;
+  const rigScale = rig ? w / rig.viewBox.w : 1;
 
-  // 地面软阴影：爬行时压扁一点，停下时圆一点
+  // 地面软阴影：跟着骨骼起伏/蹦跳自动缩放与压扁
   ctx.save();
-  ctx.fillStyle = 'rgba(24, 24, 27, 0.13)';
+  const shadowScale = bones ? bones.shadowScale : 1;
+  const shadowSquash = bones ? bones.shadowSquash : 1;
+  const baseRy = pose.state === 'idle' || pose.state === 'look' ? 0.09 : 0.075;
+  ctx.fillStyle = `rgba(24, 24, 27, ${(0.13 * Math.min(1, shadowScale)).toFixed(3)})`;
   ctx.beginPath();
-  const baseRy = pose.state === 'idle' ? 0.09 : 0.075;
-  ctx.ellipse(px, py + 2, w * 0.3, w * baseRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 2, w * 0.3 * shadowScale, w * baseRy * shadowScale * shadowSquash, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  if (rig) {
-    const bones = poseBones(pose.state, pose.theta, pose.facing, pose.blink);
-    drawRig(ctx, rig, bones, px, py, w / rig.viewBox.w);
+  // 加速狂爬 / 兔跳落地时的轻柔小烟尘
+  if (pose.dust > 0.05) {
+    ctx.save();
+    const backDir = -pose.facing;
+    for (let i = 0; i < 3; i++) {
+      const cycle = ((elapsedMs * 0.0042 + i * 0.33) % 1);
+      const dx = backDir * (14 + cycle * 26);
+      const dy = -2 - cycle * 9 + Math.sin(i * 2.1) * 3;
+      const radius = (3.4 + i * 0.9) * (1 - cycle * 0.55);
+      const alpha = (1 - cycle) * 0.34 * pose.dust;
+      ctx.fillStyle = `rgba(255, 252, 245, ${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(px + dx, py + dy, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  if (rig && bones) {
+    drawRig(ctx, rig, bones, px, py, rigScale);
   } else {
     const img = getNpcImage();
     if (img) {
@@ -1270,11 +1291,12 @@ function drawNpc(ctx: CanvasRenderingContext2D, elapsedMs: number): NpcPose {
     }
   }
 
-  // 名字：比玩家淡一档，加个浅底避免压在头发上看不清
+  // 名字：比玩家淡一档，蹦跳时轻轻跟着浮动
   ctx.save();
   ctx.font = '600 10px "Plus Jakarta Sans", "PingFang SC", sans-serif';
   ctx.textAlign = 'center';
-  const labelY = py - h * 0.78;
+  const jumpLiftPx = bones ? bones.liftY * rigScale * 0.75 : 0;
+  const labelY = py - h * 0.78 - jumpLiftPx;
   const tw = ctx.measureText(NPC.name).width;
   ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
   ctx.beginPath();
