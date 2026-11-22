@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NPC, npcPoseAt, type NpcPose } from '../lib/npc';
-import { compileRig, drawRig, poseBones, type CompiledRig } from '../lib/sipiqiRig';
+import { drawRig, getRig, poseBones } from '../lib/sipiqiRig';
 import {
   AvatarConfig,
   FloatingReaction,
@@ -1206,24 +1206,22 @@ function getNpcImage(): HTMLImageElement | null {
 }
 
 /**
- * 真骨骼驱动：角色由 `sipiqi_rig.svg` + 每帧的骨骼变换实时画出来，
- * 不用再按帧查表。雪碧图仍然保留，作为 SVG 还没编译完时的兜底。
+ * 真骨骼驱动：几何与配色在构建期就编译好了（npm run rig:bake），
+ * 运行时只按骨骼变换重画。雪碧图仍然保留，作为万一拿不到 Path2D 时的兜底。
  */
-let rigCompiled: CompiledRig | null = null;
-let rigLoading = false;
-function ensureRig() {
-  if (rigCompiled || rigLoading || typeof fetch === 'undefined') return;
-  rigLoading = true;
-  fetch(NPC.rig)
-    .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-    .then((text) => {
-      rigCompiled = compileRig(text);
+let rigLogged = false;
+function useRig() {
+  try {
+    const rig = getRig();
+    if (!rigLogged) {
+      rigLogged = true;
       // 便于排查：编译了多少个图元（0 = 没编译成功，会退回雪碧图）
-      document.body.dataset.npcRig = String(rigCompiled.parts.length);
-    })
-    .catch(() => {
-      rigLoading = false;
-    });
+      document.body.dataset.npcRig = String(rig.parts.length);
+    }
+    return rig;
+  } catch {
+    return null;
+  }
 }
 
 function drawNpc(ctx: CanvasRenderingContext2D, elapsedMs: number): NpcPose {
@@ -1233,15 +1231,14 @@ function drawNpc(ctx: CanvasRenderingContext2D, elapsedMs: number): NpcPose {
   const px = pose.x;
   const py = pose.y;
 
-  ensureRig();
-  const rig = rigCompiled;
+  const rig = useRig();
 
   // 地面软阴影：爬行时压扁一点，停下时圆一点
   ctx.save();
   ctx.fillStyle = 'rgba(24, 24, 27, 0.13)';
   ctx.beginPath();
   const baseRy = pose.state === 'idle' ? 0.09 : 0.075;
-  ctx.ellipse(px, py + 2, w * 0.3, w * baseRy * (rig ? 1 : 1), 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 2, w * 0.3, w * baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 

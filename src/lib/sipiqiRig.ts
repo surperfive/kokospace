@@ -1,15 +1,16 @@
 /**
- * 真·骨骼驱动：把 q_h5.html 里那套爬行骨骼直接搬到 canvas 上跑。
+ * 真·骨骼驱动：每帧按骨骼变换重画角色，不按帧查表。
  *
- * 思路：canvas 不认 SVG，但认路径。所以页面加载时解析一次 SVG：
- *   - 每个图元 → Path2D（永久复用）
- *   - 每个图元的填充/描边 → 具体颜色或 CanvasGradient（getComputedStyle 固化，CSS 类不再参与）
- *   - 每个图元记下它的骨骼链（从 Facing_Wrapper 到最内层骨骼）
- * 每帧只做：按骨骼链压变换栈 → fillR(path)。
+ * 几何与配色在**构建期**就编译好了（scripts/bakeRig.mjs → sipiqiRigData.ts）：
+ *   - 每个图元一条 Path2D，基本图元自身的 rotate/translate 已烘进坐标
+ *   - 填充/描边已是具体色值，渐变已换算成用户坐标
+ *   - 脸部裁剪路径跟着图元一起编译好
+ * 所以运行时**不碰 DOM**：没有 getComputedStyle、没有 getBBox、也不需要在页面里插一份 SVG。
  *
  * 姿态数学原样移植自 q_h5.html 的 applyPoseToSvg / computeArmKinematics / computeLegKinematics
  * （手脚对角交错步态），所以动画与 H5 里看到的完全一致。
  */
+import { RIG_FOOT, RIG_PARTS, RIG_VIEWBOX, type BakedPaint, type BakedPart } from './sipiqiRigData';
 
 export type RigAnim = 'crawl' | 'dash' | 'idle';
 
@@ -30,26 +31,17 @@ export interface RigPose {
   shadowSquash: number;
 }
 
-type Paint =
-  | { kind: 'solid'; color: string }
-  | {
-      kind: 'linear';
-      stops: { offset: number; color: string }[];
-      x1: number;
-      y1: number;
-      x2: number;
-      y2: number;
-    };
-
-interface RigPart {
+export interface RigPart {
   path: Path2D;
+  /** 骨骼链，从最外层到最内层 */
   chain: string[];
-  fill: Paint | null;
-  stroke: Paint | null;
+  fill: BakedPaint | null;
+  stroke: BakedPaint | null;
   strokeWidth: number;
   opacity: number;
-  doFill: boolean;
-  doStroke: boolean;
+  cap: CanvasLineCap;
+  join: CanvasLineJoin;
+  clip: Path2D | null;
 }
 
 export interface CompiledRig {
@@ -60,252 +52,43 @@ export interface CompiledRig {
   foot: { x: number; y: number };
 }
 
-const BONES = new Set([
-  'Facing_Wrapper',
-  'Character_Root',
-  'Back_Hair_Rig',
-  'Far_Leg_Rig',
-  'Far_Arm_Rig',
-  'Torso_Rig',
-  'Skull_Rig',
-  'Near_Leg_Rig',
-  'Near_Arm_Rig',
-  'Head_Rig',
-  'Left_Side_Lock',
-  'Right_Side_Lock',
-  'Veil_Rig',
-  'Left_Eye_Blink',
-  'Right_Eye_Blink',
-  'Left_Tear',
-  'Right_Tear',
-]);
-
 const IDENTITY: BoneTf = { tx: 0, ty: 0, rot: 0, px: 0, py: 0, sx: 1, sy: 1 };
 
-const num = (v: string | null, fallback = 0) => {
-  const n = Number.parseFloat(String(v ?? ''));
-  return Number.isFinite(n) ? n : fallback;
-};
-
-/** 解析 matrix(a,b,c,d,e,f) 这类 gradientTransform，只支持 matrix 与 translate */
-function gradientMatrix(str: string | null): [number, number, number, number, number, number] {
-  const id: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
-  if (!str) return id;
-  const m = /matrix\(([^)]+)\)/.exec(str);
-  if (m) {
-    const p = m[1].split(/[\s,]+/).map((v) => Number.parseFloat(v));
-    if (p.length === 6 && p.every((v) => Number.isFinite(v))) {
-      return [p[0], p[1], p[2], p[3], p[4], p[5]];
-    }
-  }
-  const t = /translate\(([^)]+)\)/.exec(str);
-  if (t) {
-    const p = t[1].split(/[\s,]+/).map((v) => Number.parseFloat(v));
-    return [1, 0, 0, 1, p[0] || 0, p[1] || 0];
-  }
-  return id;
+function toPath(d: string, m?: number[]): Path2D {
+  const base = new Path2D(d);
+  if (!m) return base;
+  // path 图元自身的变换矩阵（其它图元在烘焙时已把坐标拍平）
+  const out = new Path2D();
+  out.addPath(base, new DOMMatrix(m));
+  return out;
 }
 
-function pathFor(el: Element): Path2D | null {
-  const tag = el.tagName.toLowerCase();
-  const p = new Path2D();
-  if (tag === 'path') {
-    const d = el.getAttribute('d');
-    return d ? new Path2D(d) : null;
-  }
-  if (tag === 'circle') {
-    p.arc(num(el.getAttribute('cx')), num(el.getAttribute('cy')), num(el.getAttribute('r')), 0, Math.PI * 2);
-    return p;
-  }
-  if (tag === 'ellipse') {
-    p.ellipse(
-      num(el.getAttribute('cx')),
-      num(el.getAttribute('cy')),
-      num(el.getAttribute('rx')),
-      num(el.getAttribute('ry')),
-      0,
-      0,
-      Math.PI * 2
-    );
-    return p;
-  }
-  if (tag === 'rect') {
-    const x = num(el.getAttribute('x'));
-    const y = num(el.getAttribute('y'));
-    const w = num(el.getAttribute('width'));
-    const h = num(el.getAttribute('height'));
-    const r = num(el.getAttribute('rx'));
-    if (r > 0) p.roundRect(x, y, w, h, r);
-    else p.rect(x, y, w, h);
-    return p;
-  }
-  if (tag === 'line') {
-    p.moveTo(num(el.getAttribute('x1')), num(el.getAttribute('y1')));
-    p.lineTo(num(el.getAttribute('x2')), num(el.getAttribute('y2')));
-    return p;
-  }
-  if (tag === 'polygon' || tag === 'polyline') {
-    const pts = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
-    if (pts.length < 4) return null;
-    p.moveTo(pts[0], pts[1]);
-    for (let i = 2; i + 1 < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
-    if (tag === 'polygon') p.closePath();
-    return p;
-  }
-  return null;
-}
-
-/** 把 getComputedStyle 里的 fill/stroke 固化：纯色直接抄，url(#id) 解析成渐变 */
-function resolvePaint(
-  value: string,
-  svg: SVGSVGElement,
-  bbox: { x: number; y: number; w: number; h: number }
-): Paint | null {
-  if (!value || value === 'none' || value === 'transparent') return null;
-  const m = /^url\(["']?#([^"')]+)["']?\)/.exec(value);
-  if (!m) return { kind: 'solid', color: value };
-  const grad = svg.querySelector(`#${CSS.escape(m[1])}`) as SVGElement | null;
-  if (!grad) return null;
-
-  // 有些渐变用 xlink:href 继承停靠点
-  const stopHost =
-    grad.querySelectorAll('stop').length > 0
-      ? grad
-      : (() => {
-          const href = grad.getAttribute('xlink:href') || grad.getAttribute('href');
-          const id = href?.startsWith('#') ? href.slice(1) : '';
-          return id ? (svg.querySelector(`#${CSS.escape(id)}`) as Element | null) : null;
-        })();
-  if (!stopHost) return { kind: 'solid', color: '#888888' };
-
-  const stops = Array.from(stopHost.querySelectorAll('stop')).map((s) => {
-    const cs = getComputedStyle(s);
-    const offRaw = s.getAttribute('offset') || '0';
-    const off = offRaw.endsWith('%') ? num(offRaw) / 100 : num(offRaw);
-    const color = cs.stopColor || s.getAttribute('stop-color') || '#888';
-    const op = Number.parseFloat(cs.stopOpacity || s.getAttribute('stop-opacity') || '1');
-    return { offset: Math.min(1, Math.max(0, off)), color, opacity: Number.isFinite(op) ? op : 1 };
-  });
-  if (!stops.length) return { kind: 'solid', color: '#888888' };
-
-  const isOBB = (grad.getAttribute('gradientUnits') || 'objectBoundingBox') === 'objectBoundingBox';
-  const gx1 = grad.getAttribute('x1');
-  const gy1 = grad.getAttribute('y1');
-  const gx2 = grad.getAttribute('x2');
-  const gy2 = grad.getAttribute('y2');
-  const toUser = (vx: number, vy: number) =>
-    isOBB
-      ? [bbox.x + vx * bbox.w, bbox.y + vy * bbox.h]
-      : [vx, vy];
-
-  let [x1, y1] = toUser(num(gx1, 0), num(gy1, 0));
-  let [x2, y2] = toUser(num(gx2, 1), num(gy2, 0));
-
-  const [a, b, c, d, e, f] = gradientMatrix(grad.getAttribute('gradientTransform'));
-  const apply = (x: number, y: number): [number, number] => [a * x + c * y + e, b * x + d * y + f];
-  [x1, y1] = apply(x1, y1);
-  [x2, y2] = apply(x2, y2);
-
+function toPart(b: BakedPart): RigPart {
   return {
-    kind: 'linear',
-    stops: stops.map((s) => ({
-      offset: s.offset,
-      // stop-opacity 简化成 rgba 混合，避免额外加一层 globalAlpha
-      color: s.opacity >= 1 ? s.color : mixAlpha(s.color, s.opacity),
-    })),
-    x1,
-    y1,
-    x2,
-    y2,
+    path: toPath(b.d, b.m),
+    chain: b.c,
+    fill: b.f,
+    stroke: b.st,
+    strokeWidth: b.w,
+    opacity: b.o,
+    cap: b.lc,
+    join: b.lj,
+    clip: b.cl ? new Path2D(b.cl) : null,
   };
 }
 
-/** 把 rgb()/hex 颜色按 alpha 摊平 */
-function mixAlpha(color: string, alpha: number): string {
-  const c = color.trim();
-  const m = /^rgb\((\d+)[,\s]+(\d+)[,\s]+(\d+)\)$/.exec(c);
-  if (m) return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
-  if (c.startsWith('#')) {
-    const hex = c.slice(1);
-    const full = hex.length === 3 ? hex.split('').map((h) => h + h).join('') : hex;
-    const r = Number.parseInt(full.slice(0, 2), 16);
-    const g = Number.parseInt(full.slice(2, 4), 16);
-    const b = Number.parseInt(full.slice(4, 6), 16);
-    if ([r, g, b].every((v) => Number.isFinite(v))) return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-  return c;
-}
+let cached: CompiledRig | null = null;
 
-function paintToStyle(ctx: CanvasRenderingContext2D, paint: Paint): string | CanvasGradient {
-  if (paint.kind === 'solid') return paint.color;
-  const g = ctx.createLinearGradient(paint.x1, paint.y1, paint.x2, paint.y2);
-  for (const s of paint.stops) g.addColorStop(s.offset, s.color);
-  return g;
-}
-
-/**
- * 解析 SVG 文本 → 编译好的骨骼角色。
- * 必须临时挂进文档里：getComputedStyle / getBBox 只对已渲染的元素有效。
- */
-export function compileRig(svgText: string): CompiledRig {
-  const host = document.createElement('div');
-  host.setAttribute('aria-hidden', 'true');
-  host.style.cssText = 'position:fixed;left:-99999px;top:0;width:1px;height:1px;overflow:hidden;';
-  host.innerHTML = svgText;
-  document.body.appendChild(host);
-
-  try {
-    const svg = host.querySelector('svg') as SVGSVGElement;
-    const vbAttr = (svg.getAttribute('viewBox') || '0 0 680 560').trim().split(/[\s,]+/).map(Number);
-    const viewBox = { x: vbAttr[0] || 0, y: vbAttr[1] || 0, w: vbAttr[2] || 680, h: vbAttr[3] || 560 };
-
-    const parts: RigPart[] = [];
-    const shapes = svg.querySelectorAll('path, ellipse, circle, rect, line, polygon, polyline');
-
-    shapes.forEach((el) => {
-      // 阴影单独用 canvas 画，跳过
-      if (el.closest('#Ground_Shadow')) return;
-
-      const path = pathFor(el);
-      if (!path) return;
-
-      const cs = getComputedStyle(el);
-      const bb = (el as SVGGraphicsElement).getBBox();
-      const bbox = { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 };
-
-      const chain: string[] = [];
-      let node: Element | null = el.parentElement;
-      while (node && node !== svg) {
-        const id = node.getAttribute('id');
-        if (id && BONES.has(id)) chain.unshift(id);
-        node = node.parentElement;
-      }
-
-      const doFill = cs.fill !== 'none';
-      const doStroke = cs.stroke !== 'none' && num(cs.strokeWidth, 0) > 0;
-
-      parts.push({
-        path,
-        chain,
-        fill: doFill ? resolvePaint(cs.fill, svg, bbox) : null,
-        stroke: doStroke ? resolvePaint(cs.stroke, svg, bbox) : null,
-        strokeWidth: num(cs.strokeWidth, 1),
-        opacity: Number.parseFloat(cs.opacity || '1') || 1,
-        doFill,
-        doStroke,
-      });
-    });
-
-    const shadowEllipse = svg.querySelector('#Ground_Shadow_Ellipse');
-    const foot = {
-      x: num(shadowEllipse?.getAttribute('cx') ?? null, 320),
-      y: num(shadowEllipse?.getAttribute('cy') ?? null, 466),
+/** 取编译好的角色（首次调用时把路径数据变成 Path2D，之后一直复用） */
+export function getRig(): CompiledRig {
+  if (!cached) {
+    cached = {
+      parts: RIG_PARTS.map(toPart),
+      viewBox: { ...RIG_VIEWBOX },
+      foot: { ...RIG_FOOT },
     };
-
-    return { parts, viewBox, foot };
-  } finally {
-    host.remove();
   }
+  return cached;
 }
 
 /* ============================ 姿态数学（移植自 H5） ============================ */
@@ -440,6 +223,13 @@ function applyTf(ctx: CanvasRenderingContext2D, tf: BoneTf) {
   }
 }
 
+function paintOf(ctx: CanvasRenderingContext2D, paint: BakedPaint): string | CanvasGradient {
+  if (paint.k === 's') return paint.c;
+  const g = ctx.createLinearGradient(paint.x1, paint.y1, paint.x2, paint.y2);
+  for (const [offset, color] of paint.s) g.addColorStop(offset, color);
+  return g;
+}
+
 /**
  * 在世界坐标里画一次角色。
  * @param scale 世界像素 / SVG 用户单位
@@ -463,17 +253,18 @@ export function drawRig(
       const tf = pose.bones[id];
       if (tf) applyTf(ctx, tf);
     }
-    const fade = part.opacity < 1;
-    if (fade) ctx.globalAlpha *= part.opacity;
-    if (part.doFill && part.fill) {
-      ctx.fillStyle = paintToStyle(ctx, part.fill);
+    // 脸部裁剪：裁剪路径与图元同在最后一个骨骼的坐标系里
+    if (part.clip) ctx.clip(part.clip);
+    if (part.opacity < 1) ctx.globalAlpha *= part.opacity;
+    if (part.fill) {
+      ctx.fillStyle = paintOf(ctx, part.fill);
       ctx.fill(part.path);
     }
-    if (part.doStroke && part.stroke) {
-      ctx.strokeStyle = paintToStyle(ctx, part.stroke);
+    if (part.stroke) {
+      ctx.strokeStyle = paintOf(ctx, part.stroke);
       ctx.lineWidth = part.strokeWidth;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.lineCap = part.cap;
+      ctx.lineJoin = part.join;
       ctx.stroke(part.path);
     }
     ctx.restore();
