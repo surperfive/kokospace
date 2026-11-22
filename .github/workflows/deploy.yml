@@ -1,12 +1,14 @@
 name: Deploy to Cloudflare Workers
 
-# 推送 main 分支或手动点 Run workflow 时，自动构建并部署到 Cloudflare。
-# 需要两个仓库 Secret（Settings → Secrets and variables → Actions）：
+# 现在部署由 Cloudflare 自己的 Git 集成做（Workers & Pages → kokospace → Settings → Builds），
+# push main 后 Cloudflare 直接构建上线，不需要这里的 Secret，也不占 GitHub 的 Actions 分钟。
+#
+# 所以这个工作流**不再随 push 自动跑**（以前每次 push 都会因为 Secret 失效挂一个红叉）。
+# 留着它做手动备用：在 Actions 页面点 Run workflow 才会执行。
+# 要用它的话先配两个仓库 Secret：
 #   CLOUDFLARE_API_TOKEN   —— 权限模板选「Edit Cloudflare Workers」
 #   CLOUDFLARE_ACCOUNT_ID  —— ce72297a5f7faac96aeb087d4ad1b77e
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

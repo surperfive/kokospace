@@ -1,5 +1,20 @@
 # 用 GitHub 管理代码 + 自动部署（以后在云端改）
 
+## 当前用的是哪条路（2026-11-23 起）
+
+**Cloudflare 自己的 Git 集成**：Dashboard → Workers & Pages → `kokospace` → Settings → Builds，
+已连上 GitHub 仓库的 `main`。push 之后 Cloudflare 自己 `npm run build` + `npx wrangler deploy`，
+**不需要任何 API Token，也不占 GitHub Actions 的分钟数**。
+
+因此 `.github/workflows/deploy.yml` 已改成只在手动 `Run workflow` 时执行，不再随 push 自动跑
+（之前每次 push 都会因为 `CLOUDFLARE_API_TOKEN` 失效挂一个红叉）。它是备用通道，下面的
+「4 步」保留作参考：真要切回 GitHub Actions 时按那个配一遍 Secret 即可。
+
+判断线上是不是最新：打开 <https://kokospace.de5.net/>，`view-source` 里的
+`assets/index-XXXX.js` 换了就说明 Cloudflare 构建成功。构建日志在 Cloudflare 的 Builds 页面。
+
+---
+
 ## 先说清楚一件事
 
 **GitHub Pages 跑不了这个项目。** Pages 只发静态文件，没有常驻 WebSocket 服务端；
