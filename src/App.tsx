@@ -1516,7 +1516,7 @@ export default function App() {
               已断开
             </span>
           ) : (
-            <div className="relative hidden sm:block">
+            <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowLinkMenu((v) => !v)}
@@ -1543,14 +1543,15 @@ export default function App() {
                   }`}
                 />
                 {linkMode === 'direct' ? '直连' : linkMode === 'connecting' ? '连接中' : '云端'}
-                <span className="opacity-70">· {players.length}人</span>
+                <span className="hidden sm:inline opacity-70">· {players.length}人</span>
                 <ChevronDown className="h-3 w-3 opacity-50" />
               </button>
 
               {showLinkMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowLinkMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-zinc-200 bg-white p-2 shadow-xl">
+                  {/* 手机上胶囊在左边，right-0 会把菜单顶出屏幕左侧，所以窄屏改成通栏 */}
+                  <div className="fixed left-3 right-3 top-16 z-50 rounded-xl border border-zinc-200 bg-white p-2 shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72">
                     <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                       连接方式
                     </div>
