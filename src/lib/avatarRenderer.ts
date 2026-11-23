@@ -45,6 +45,8 @@ export interface DrawChibiOptions {
   hideShadow?: boolean;
   /** 被扛在肩上时：不画名字牌（会盖住扛人者的脸） */
   hideName?: boolean;
+  /** 正举着巨幕/修女/队友时：双手高举到头顶两侧 */
+  isCarrying?: boolean;
 }
 
 export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOptions) {
@@ -67,6 +69,7 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
     chatBubbleRise = 0,
     hideShadow = false,
     hideName = false,
+    isCarrying = false,
   } = opts;
 
   ctx.save();
@@ -161,19 +164,31 @@ export function drawChibiAvatar(ctx: CanvasRenderingContext2D, opts: DrawChibiOp
     ctx.fill();
   }
 
-  // Little Chibi arms
+  // Little Chibi arms（举着东西时双手高举托住头顶）
   const armSwing = isMoving ? walkCycle * 3.5 : 0;
   ctx.fillStyle = avatar.skinColor || '#FCD5B5';
   ctx.strokeStyle = '#18181B';
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(-13, -2 + armSwing, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(13, -2 - armSwing, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
+  if (isCarrying) {
+    const liftBob = isMoving ? Math.sin(timeMs / 120) * 1.5 : 0;
+    ctx.beginPath();
+    ctx.arc(-15, -34 + liftBob, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(15, -34 + liftBob, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(-13, -2 + armSwing, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(13, -2 - armSwing, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
 
   // Back hair for wavy / bun styles
   if (avatar.hairStyle === 'wavy') {

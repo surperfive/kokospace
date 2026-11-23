@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bot,
   Mic,
   MicOff,
   Megaphone,
@@ -13,14 +14,13 @@ import {
   Check,
   Send,
   X,
-  Users,
-  Sparkles,
   Power,
   RefreshCw,
   Loader2,
   PictureInPicture2,
   Palette,
   ChevronDown,
+  MoreHorizontal,
 } from 'lucide-react';
 import {
   AvatarConfig,
@@ -143,6 +143,7 @@ export default function App() {
   /** 画板导出后待挂的画（挂到墙上时塞进 furniture.art） */
   const [pendingArt, setPendingArt] = useState<string | null>(null);
   const [showEmojiMenu, setShowEmojiMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const [chatInput, setChatInput] = useState('');
   /** 聊天里贴链接触发的点播正在解析（慢的时候要十几秒，得让用户看到还在跑） */
@@ -1494,220 +1495,17 @@ export default function App() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const connectionLabel = manuallyDisconnected
+    ? '已断开'
+    : linkMode === 'direct'
+      ? '直连'
+      : linkMode === 'connecting'
+        ? '连接中'
+        : '云端';
+
   return (
     <div className="relative w-full h-full bg-[#F4F5F7] overflow-hidden flex flex-col">
-      {/* Compact 3-Zone Top Navigation Bar */}
-      <header className="h-14 px-4 sm:px-6 bg-white/90 backdrop-blur-md border-b border-zinc-200/90 flex items-center justify-between gap-4 sm:gap-8 z-30 shrink-0">
-        {/* Zone 1: Brand Wordmark */}
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="font-display text-lg font-bold tracking-tight text-zinc-900 whitespace-nowrap shrink-0">
-            KokoSpace
-          </span>
-          <span className="hidden sm:inline text-xs text-zinc-400">·</span>
-          <span className="hidden sm:inline text-xs text-zinc-600 truncate">
-            {currentMapTheme.name} · 房间 {roomId}
-          </span>
-          {manuallyDisconnected ? (
-            <span
-              title="已手动断开房间连接，点击底部「重新连接」恢复"
-              className="hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium bg-red-50 text-red-600"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-              已断开
-            </span>
-          ) : (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowLinkMenu((v) => !v)}
-                title={
-                  isRoomHost
-                    ? '连接方式：点这里切换直连 / 云端（作用于全屋）'
-                    : '连接方式由房主决定，你会自动跟随'
-                }
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer hover:brightness-95 ${
-                  linkMode === 'direct'
-                    ? 'bg-emerald-50 text-emerald-600'
-                    : linkMode === 'connecting'
-                      ? 'bg-zinc-100 text-zinc-500'
-                      : 'bg-sky-50 text-sky-600'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    linkMode === 'direct'
-                      ? 'bg-emerald-500'
-                      : linkMode === 'connecting'
-                        ? 'bg-zinc-400 animate-pulse'
-                        : 'bg-sky-500'
-                  }`}
-                />
-                {linkMode === 'direct' ? '直连' : linkMode === 'connecting' ? '连接中' : '云端'}
-                <span className="hidden sm:inline opacity-70">· {players.length}人</span>
-                <ChevronDown className="h-3 w-3 opacity-50" />
-              </button>
-
-              {showLinkMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowLinkMenu(false)} />
-                  {/* 手机上胶囊在左边，right-0 会把菜单顶出屏幕左侧，所以窄屏改成通栏 */}
-                  <div className="fixed left-3 right-3 top-16 z-50 rounded-xl border border-zinc-200 bg-white p-2 shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72">
-                    <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                      连接方式
-                    </div>
-                    {(
-                      [
-                        {
-                          id: 'direct' as const,
-                          title: '直连（P2P）',
-                          desc: '房主当服务器，延迟最低；打洞失败会自动回落云端',
-                        },
-                        {
-                          id: 'cloud' as const,
-                          title: '云端',
-                          desc: '所有人走 Cloudflare 服务器，最稳，不受网络环境影响',
-                        },
-                      ]
-                    ).map((opt) => {
-                      const active =
-                        opt.id === 'direct'
-                          ? linkMode === 'direct' || linkMode === 'connecting'
-                          : linkMode === 'cloud' || linkMode === 'off';
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          disabled={!isRoomHost}
-                          onClick={() => {
-                            if (!isRoomHost) return;
-                            setShowLinkMenu(false);
-                            linkSwitchRef.current?.(opt.id);
-                          }}
-                          className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left ${
-                            isRoomHost ? 'hover:bg-zinc-50 cursor-pointer' : 'opacity-50 cursor-not-allowed'
-                          }`}
-                        >
-                          <span
-                            className={`mt-1 h-3 w-3 shrink-0 rounded-full border ${
-                              active ? 'border-zinc-900 bg-zinc-900' : 'border-zinc-300 bg-white'
-                            }`}
-                          />
-                          <span className="min-w-0">
-                            <span className="block text-xs font-semibold text-zinc-900">{opt.title}</span>
-                            <span className="block text-[10px] leading-relaxed text-zinc-500">{opt.desc}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                    <p className="border-t border-zinc-100 px-2 pb-1 pt-2 text-[10px] leading-relaxed text-zinc-500">
-                      {isRoomHost
-                        ? '切换立刻作用于全屋：客人会自动跟随，不用重新进房。'
-                        : '只有房主能切换。房主改了你也会自动跟随。'}
-                    </p>
-                    {!isRoomHost && linkMode === 'cloud' && p2pHostRef.current && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowLinkMenu(false);
-                          p2pRetryRef.current?.();
-                        }}
-                        className="mt-1 w-full rounded-lg bg-zinc-100 px-2 py-1.5 text-[10px] font-medium text-zinc-700 hover:bg-zinc-200 cursor-pointer"
-                      >
-                        重试直连房主
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Zone 2: Clean Single-Line Nav Links (Desktop) */}
-        <nav className="hidden lg:flex items-center gap-6 text-xs font-medium text-zinc-600">
-          <button
-            type="button"
-            onClick={() => setShowQueueDrawer(true)}
-            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
-          >
-            点播队列
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowSceneModal(true)}
-            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
-          >
-            地图与布置
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPixelStudio(true)}
-            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
-          >
-            像素画
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAiModal(true)}
-            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
-          >
-            AI 点播
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAvatarModal(true)}
-            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
-          >
-            虚拟化身
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowDocsModal(true)}
-            className="hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1"
-          >
-            开发文档与插件
-          </button>
-        </nav>
-
-        {/* Zone 3: Online Count + Primary Invite CTA */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-600 tabular-nums whitespace-nowrap">
-            <Users className="w-3.5 h-3.5 text-zinc-400" />
-            <span>{players.length} 人在线</span>
-          </div>
-          <button
-            type="button"
-            onClick={copyInviteLink}
-            className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-            <span>{copiedLink ? '已复制链接' : '邀请好友'}</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Scene Edit Mode Floating Strip */}
-      {isEditingScene && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-2xl bg-zinc-900 text-white text-xs font-medium shadow-xl flex items-center gap-3">
-          <span>场景编辑模式：点击地图摆放「{selectedBrush === 'erase' ? '移除模式' : selectedBrush}」</span>
-          <button
-            type="button"
-            onClick={() => setShowSceneModal(true)}
-            className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 cursor-pointer"
-          >
-            切换家具
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditingScene(false)}
-            className="px-2.5 py-1 rounded-lg bg-[#FF5A36] hover:bg-[#E84B28] font-semibold cursor-pointer"
-          >
-            完成编辑
-          </button>
-        </div>
-      )}
-
-      {/* Main 2D Spatial World */}
+      {/* Full-Viewport 2D Spatial World (Zero Top Chrome) */}
       <main className="relative flex-1 min-h-0">
         {hasEnteredRoom && (
           <MetaverseCanvas
@@ -1760,199 +1558,524 @@ export default function App() {
           />
         )}
 
-        {/* Proximity & Stage Zone Indicator (Subtle Bottom-Left Info on Desktop) */}
-        {hasEnteredRoom && (
-          <div className="hidden md:flex fixed left-4 bottom-24 z-20 flex-col gap-1.5 px-3.5 py-2.5 rounded-2xl bg-white/88 backdrop-blur-md border border-zinc-200/90 shadow-sm text-xs text-zinc-700">
-            <div className="font-medium flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#FF5A36]" />
-              <span>
-                {isBroadcasting
-                  ? '全房间舞台广播中'
-                  : inStageZone
-                  ? '位于舞台区 · 可开启全员广播'
-                  : `声场范围内有 ${nearbyCount} 位同伴`}
-              </span>
-            </div>
-            <div className="text-[11px] text-zinc-500">
-              WASD / 点击移动 · E 落座 · 滚轮缩放
-            </div>
+        {/* Scene Edit Mode Floating Strip (Anchored above Bottom Dock) */}
+        {isEditingScene && (
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl bg-zinc-900/95 text-white text-xs font-medium shadow-xl flex items-center gap-3 whitespace-nowrap">
+            <span>场景编辑：点击放置「{selectedBrush === 'erase' ? '移除家具' : selectedBrush}」</span>
+            <button
+              type="button"
+              onClick={() => setShowSceneModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 cursor-pointer"
+            >
+              更换家具
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditingScene(false)}
+              className="px-2.5 py-1 rounded-lg bg-[#FF5A36] hover:bg-[#E84B28] font-semibold cursor-pointer"
+            >
+              完成
+            </button>
           </div>
         )}
 
-        {/* Mobile Virtual Joystick (Bottom-Left Thumb Zone) */}
+        {/* Mobile Virtual Joystick (Bottom-Left Thumb Zone above dock) */}
         {hasEnteredRoom && isTouchDevice && !isTheaterFocused && (
           <div className="fixed left-4 bottom-20 z-30">
             <MobileJoystick onVectorChange={setJoystickVec} />
           </div>
         )}
 
-        {/* Bottom Floating Interaction Dock */}
+        {/* Bottom-Left: Unified Brand + Room Context + Connection Popover (Desktop xl+) */}
         {hasEnteredRoom && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 py-2 rounded-2xl bg-white/92 backdrop-blur-md border border-zinc-200 shadow-xl max-w-[96vw] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {/* Disconnect / Reconnect Connection Toggle */}
-            <button
-              type="button"
-              onClick={handleToggleConnection}
-              className={`min-h-[44px] px-3 sm:px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                manuallyDisconnected
-                  ? 'bg-[#10B981] text-white hover:bg-[#0EA371]'
-                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
-              }`}
-              title={manuallyDisconnected ? '重新连接房间' : '断开整个房间连接（停止收发同步）'}
-            >
-              {manuallyDisconnected ? (
-                <RefreshCw className="w-4 h-4" />
-              ) : (
-                <Power className="w-4 h-4" />
+          <div className="hidden xl:flex fixed left-4 bottom-4 z-30 items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmojiMenu(false);
+                  setShowMoreMenu(false);
+                  setShowLinkMenu((v) => !v);
+                }}
+                className="h-12 px-3.5 rounded-2xl bg-white/95 backdrop-blur-md border border-zinc-200 shadow-lg hover:bg-white text-xs text-zinc-700 flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer"
+                title="房间信息、连接方式与快捷键"
+              >
+                <span className="font-display font-bold text-sm tracking-tight text-zinc-900">
+                  KokoSpace
+                </span>
+                <span className="text-zinc-300" aria-hidden="true">·</span>
+                <span className="text-zinc-700 font-medium">{currentMapTheme.name}</span>
+                <span className="text-zinc-300" aria-hidden="true">·</span>
+                <span className="tabular-nums text-zinc-500">{players.length} 人</span>
+                <span className="text-zinc-300" aria-hidden="true">·</span>
+                <span
+                  className={
+                    manuallyDisconnected
+                      ? 'text-red-600 font-medium'
+                      : linkMode === 'direct'
+                        ? 'text-emerald-700 font-medium'
+                        : 'text-zinc-600'
+                  }
+                >
+                  {connectionLabel}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+              </button>
+
+              {showLinkMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowLinkMenu(false)} />
+                  <div className="absolute left-0 bottom-full mb-2.5 z-40 w-72 rounded-2xl border border-zinc-200 bg-white p-2.5 shadow-2xl space-y-1.5">
+                    <div className="px-2.5 pt-1 pb-1.5 border-b border-zinc-100 flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-zinc-800 font-mono">房间 #{roomId}</span>
+                      <span className={isBroadcasting ? 'text-[#FF5A36] font-medium' : 'text-zinc-500'}>
+                        {isBroadcasting
+                          ? '舞台广播中'
+                          : inStageZone
+                            ? '舞台区 · 可广播'
+                            : `声场 ${nearbyCount} 人`}
+                      </span>
+                    </div>
+
+                    <div className="px-2.5 pt-1 text-[11px] font-semibold text-zinc-400">连接方式</div>
+                    {(
+                      [
+                        {
+                          id: 'direct' as const,
+                          title: '直连（P2P）',
+                          desc: '房主直连低延迟，失败时自动回落云端',
+                        },
+                        {
+                          id: 'cloud' as const,
+                          title: '云端中继',
+                          desc: '统一走云端服务器，稳定不受网络限制',
+                        },
+                      ]
+                    ).map((opt) => {
+                      const active =
+                        !manuallyDisconnected &&
+                        (opt.id === 'direct'
+                          ? linkMode === 'direct' || linkMode === 'connecting'
+                          : linkMode === 'cloud' || linkMode === 'off');
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={!isRoomHost || manuallyDisconnected}
+                          onClick={() => {
+                            if (!isRoomHost || manuallyDisconnected) return;
+                            setShowLinkMenu(false);
+                            linkSwitchRef.current?.(opt.id);
+                          }}
+                          className={`flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                            isRoomHost && !manuallyDisconnected
+                              ? 'hover:bg-zinc-50 cursor-pointer'
+                              : 'opacity-50 cursor-not-allowed'
+                          }`}
+                        >
+                          <span
+                            className={`mt-1 h-3 w-3 shrink-0 rounded-full border ${
+                              active ? 'border-zinc-900 bg-zinc-900' : 'border-zinc-300 bg-white'
+                            }`}
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-zinc-900">{opt.title}</span>
+                            <span className="block text-[11px] leading-snug text-zinc-500 mt-0.5">{opt.desc}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    {!isRoomHost && !manuallyDisconnected && linkMode === 'cloud' && p2pHostRef.current && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowLinkMenu(false);
+                          p2pRetryRef.current?.();
+                        }}
+                        className="w-full rounded-xl bg-zinc-100 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-200 cursor-pointer"
+                      >
+                        重试直连房主
+                      </button>
+                    )}
+
+                    <div className="border-t border-zinc-100 pt-2 px-2.5 text-[11px] text-zinc-400">
+                      WASD 移动 · E 落座 · F 举起 · 滚轮缩放
+                    </div>
+
+                    <div className="border-t border-zinc-100 pt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowLinkMenu(false);
+                          handleToggleConnection();
+                        }}
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-medium cursor-pointer ${
+                          manuallyDisconnected
+                            ? 'text-emerald-700 hover:bg-emerald-50'
+                            : 'text-red-600 hover:bg-red-50'
+                        }`}
+                      >
+                        {manuallyDisconnected ? (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        ) : (
+                          <Power className="w-3.5 h-3.5" />
+                        )}
+                        <span>{manuallyDisconnected ? '重新连接房间' : '断开房间连接'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
-              <span className="hidden sm:inline">
-                {manuallyDisconnected ? '重新连接' : '断开连接'}
-              </span>
-            </button>
+            </div>
 
-            <div className="w-px h-6 bg-zinc-200 shrink-0" />
+            {manuallyDisconnected && (
+              <button
+                type="button"
+                onClick={handleToggleConnection}
+                className="h-12 px-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>重连</span>
+              </button>
+            )}
+          </div>
+        )}
 
-            {/* Voice Mic Toggle */}
+        {/* Bottom-Center: Unified Master Action Dock (All Primary Controls Consolidated Here) */}
+        {hasEnteredRoom && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 h-12 flex items-center gap-0.5 sm:gap-1 px-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-zinc-200 shadow-xl">
+            {/* Group 1: Voice & Broadcast */}
             <button
               type="button"
               onClick={toggleMic}
-              className={`min-h-[44px] px-3 sm:px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 isMicOn
-                  ? 'bg-[#10B981] text-white'
-                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  : 'text-zinc-700 hover:bg-zinc-100'
               }`}
               title={isMicOn ? '关闭麦克风' : '开启空间语音麦克风'}
             >
               {isMicOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-              <span className="hidden sm:inline">{isMicOn ? '麦已开' : '开麦'}</span>
+              <span className="hidden lg:inline">{isMicOn ? '麦已开' : '开麦'}</span>
             </button>
 
-            {/* Stage Broadcast Toggle */}
             <button
               type="button"
               onClick={toggleBroadcast}
-              className={`min-h-[44px] px-3 sm:px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 isBroadcasting
-                  ? 'bg-[#FF5A36] text-white'
+                  ? 'bg-[#FF5A36] text-white hover:bg-[#E84B28]'
                   : inStageZone
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                    ? 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    : 'text-zinc-700 hover:bg-zinc-100'
               }`}
               title="切换舞台全员广播"
             >
               <Megaphone className="w-4 h-4" />
-              <span className="hidden sm:inline">{isBroadcasting ? '广播中' : '广播'}</span>
+              <span className="hidden lg:inline">{isBroadcasting ? '广播中' : '广播'}</span>
             </button>
 
-            {/* Emoji & Sticker Reactions */}
+            <div className="w-px h-5 bg-zinc-200 mx-0.5 shrink-0" />
+
+            {/* Group 2: Cinema, AI & Space */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmojiMenu(false);
+                setShowMoreMenu(false);
+                setShowQueueDrawer(true);
+              }}
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                showQueueDrawer ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+              title="打开点播队列"
+            >
+              <ListVideo className="w-4 h-4" />
+              <span className="hidden sm:inline">点播</span>
+              {videoState.queue.length > 0 && (
+                <span
+                  className={`hidden sm:inline text-[11px] font-mono tabular-nums ${
+                    showQueueDrawer ? 'text-zinc-300' : 'text-zinc-400'
+                  }`}
+                >
+                  {videoState.queue.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmojiMenu(false);
+                setShowMoreMenu(false);
+                setShowAiModal(true);
+              }}
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                showAiModal
+                  ? 'bg-[#FF5A36] text-white'
+                  : 'bg-[#FF5A36]/10 text-[#FF5A36] hover:bg-[#FF5A36]/18'
+              }`}
+              title="打开 AI 影院导演台"
+            >
+              <Bot className="w-4 h-4" />
+              <span className="hidden sm:inline">AI 导演</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmojiMenu(false);
+                setShowMoreMenu(false);
+                setShowSceneModal(true);
+              }}
+              className={`hidden md:flex h-9 px-3 rounded-xl text-xs font-medium items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                showSceneModal ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+              title="场景布置与地图切换"
+            >
+              <MapIcon className="w-4 h-4" />
+              <span>场景</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmojiMenu(false);
+                setShowMoreMenu(false);
+                setShowAvatarModal(true);
+              }}
+              className={`hidden md:flex h-9 px-3 rounded-xl text-xs font-medium items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                showAvatarModal ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+              title="编辑虚拟化身"
+            >
+              <UserCog className="w-4 h-4" />
+              <span>化身</span>
+            </button>
+
+            <div className="w-px h-5 bg-zinc-200 mx-0.5 shrink-0" />
+
+            {/* Group 3: Chat, Reactions & Mini Player */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmojiMenu(false);
+                setShowMoreMenu(false);
+                setShowChatDrawer((v) => !v);
+              }}
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                showChatDrawer ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+              title="打开空间聊天室"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span className="hidden lg:inline">聊天</span>
+            </button>
+
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setShowEmojiMenu((v) => !v)}
-                className="min-h-[44px] min-w-[44px] px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-                title="发送表情包与互动"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  setShowLinkMenu(false);
+                  setShowEmojiMenu((v) => !v);
+                }}
+                className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  showEmojiMenu ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+                }`}
+                title="发送表情互动"
               >
                 <Smile className="w-4 h-4" />
-                <span className="hidden sm:inline">表情互动</span>
+                <span className="hidden lg:inline">表情</span>
               </button>
 
               {showEmojiMenu && (
-                <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-64 p-3 rounded-2xl bg-white border border-zinc-200 shadow-2xl grid grid-cols-4 gap-1.5">
-                  {activeReactions.map((r) => (
-                    <button
-                      key={`${r.emoji}-${r.label}`}
-                      type="button"
-                      onClick={() => sendReaction(r.emoji, r.label)}
-                      className="p-2 rounded-xl hover:bg-zinc-100 flex flex-col items-center gap-0.5 transition-transform active:scale-90 cursor-pointer"
-                    >
-                      <span className="text-xl">{r.emoji}</span>
-                      <span className="text-[10px] text-zinc-500 truncate max-w-full">{r.label}</span>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowEmojiMenu(false)} />
+                  <div className="absolute bottom-13 left-1/2 -translate-x-1/2 z-40 w-64 p-2.5 rounded-2xl bg-white border border-zinc-200 shadow-2xl grid grid-cols-4 gap-1">
+                    {activeReactions.map((r) => (
+                      <button
+                        key={`${r.emoji}-${r.label}`}
+                        type="button"
+                        onClick={() => sendReaction(r.emoji, r.label)}
+                        className="p-2 rounded-xl hover:bg-zinc-100 flex flex-col items-center gap-0.5 transition-transform active:scale-90 cursor-pointer"
+                      >
+                        <span className="text-xl leading-none">{r.emoji}</span>
+                        <span className="text-[10px] text-zinc-500 truncate max-w-full mt-1">{r.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
-            {/* Chat / Danmaku Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowChatDrawer((v) => !v)}
-              className={`min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
-                showChatDrawer ? 'bg-zinc-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
-              }`}
-              title="文字聊天"
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">聊天</span>
-            </button>
-
-            {/* Mini Player Toggle（小窗：边逛边看，大屏不受影响） */}
             <button
               type="button"
               onClick={handleToggleMini}
-              className={`min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                isMiniPlayer ? 'bg-zinc-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
+              className={`hidden md:flex h-9 px-2.5 rounded-xl text-xs font-medium items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                isMiniPlayer ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
-              title={isMiniPlayer ? '关闭小窗' : '弹出悬浮小窗（切到别的应用也能看）'}
+              title={isMiniPlayer ? '关闭悬浮小窗' : '打开悬浮小窗'}
             >
               <PictureInPicture2 className="w-4 h-4" />
-              <span className="hidden sm:inline">小窗</span>
+              <span className="hidden lg:inline">小窗</span>
             </button>
 
-            {/* Pixel Art Studio */}
+            <div className="w-px h-5 bg-zinc-200 mx-0.5 shrink-0" />
+
+            {/* Group 4: Invite Primary CTA & Overflow Tools */}
             <button
               type="button"
-              onClick={() => setShowPixelStudio(true)}
-              className={`min-h-[44px] min-w-[44px] px-2.5 sm:px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                showPixelStudio ? 'bg-zinc-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
-              }`}
-              title="像素画板：画完挂到墙上"
+              onClick={copyInviteLink}
+              className="h-9 px-2.5 sm:px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              title="复制房间邀请链接"
             >
-              <Palette className="w-4 h-4" />
-              <span className="hidden sm:inline">像素画</span>
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{copiedLink ? '已复制' : '邀请'}</span>
             </button>
 
-            {/* Mobile/Tablet Quick Feature Buttons (hidden on lg where top nav handles them) */}
-            <button
-              type="button"
-              onClick={() => setShowQueueDrawer(true)}
-              className="lg:hidden min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 flex items-center justify-center cursor-pointer"
-              title="点播片单"
-            >
-              <ListVideo className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSceneModal(true)}
-              className="lg:hidden min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 flex items-center justify-center cursor-pointer"
-              title="地图与场景"
-            >
-              <MapIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAvatarModal(true)}
-              className="lg:hidden min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 flex items-center justify-center cursor-pointer"
-              title="虚拟化身"
-            >
-              <UserCog className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDocsModal(true)}
-              className="lg:hidden min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 flex items-center justify-center cursor-pointer"
-              title="开发文档与插件"
-            >
-              <BookOpen className="w-4 h-4" />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmojiMenu(false);
+                  setShowLinkMenu(false);
+                  setShowMoreMenu((v) => !v);
+                }}
+                className={`h-9 w-9 rounded-xl flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                  showMoreMenu ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100'
+                }`}
+                title="更多工具与房间设置"
+                aria-label="更多工具与房间设置"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+
+              {showMoreMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
+                  <div className="absolute bottom-13 right-0 z-40 w-56 p-1.5 rounded-2xl bg-white border border-zinc-200 shadow-2xl space-y-0.5">
+                    {/* Room status summary on compact viewports where bottom-left pill is hidden */}
+                    <div className="xl:hidden px-3 py-2 border-b border-zinc-100 mb-1">
+                      <div className="text-xs font-semibold text-zinc-900 flex items-center justify-between">
+                        <span>{currentMapTheme.name}</span>
+                        <span className="text-[11px] font-mono text-zinc-400">#{roomId}</span>
+                      </div>
+                      <div className="text-[11px] text-zinc-500 mt-0.5 tabular-nums">
+                        {players.length} 人在线 · {connectionLabel}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowSceneModal(true);
+                      }}
+                      className="md:hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <MapIcon className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>场景布置</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowAvatarModal(true);
+                      }}
+                      className="md:hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <UserCog className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>虚拟化身</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        handleToggleMini();
+                      }}
+                      className="md:hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <PictureInPicture2 className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>{isMiniPlayer ? '关闭小窗' : '打开小窗'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowPixelStudio(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <Palette className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>像素画板（自绘挂墙）</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowDocsModal(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>开发文档与插件</span>
+                    </button>
+
+                    {isRoomHost && !manuallyDisconnected && (
+                      <div className="xl:hidden border-t border-zinc-100 pt-1 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMoreMenu(false);
+                            const next = linkMode === 'direct' || linkMode === 'connecting' ? 'cloud' : 'direct';
+                            linkSwitchRef.current?.(next);
+                          }}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                        >
+                          <span>切换连接方式</span>
+                          <span className="text-[11px] text-zinc-400">
+                            {linkMode === 'direct' || linkMode === 'connecting' ? '改用云端' : '改用直连'}
+                          </span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="xl:hidden border-t border-zinc-100 pt-1 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          handleToggleConnection();
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer ${
+                          manuallyDisconnected
+                            ? 'text-emerald-700 hover:bg-emerald-50'
+                            : 'text-red-600 hover:bg-red-50'
+                        }`}
+                      >
+                        {manuallyDisconnected ? (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        ) : (
+                          <Power className="w-3.5 h-3.5" />
+                        )}
+                        <span>{manuallyDisconnected ? '重新连接房间' : '断开房间连接'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Compact Floating Chat Panel（小窗在右下时，桌面端把面板挪到左边，别压住画面） */}
+        {/* Compact Floating Chat Panel（小窗在右下时，桌面端把面板挪到左边，避免遮挡画面） */}
         {hasEnteredRoom && showChatDrawer && (
           <div
-            className={`fixed bottom-20 z-30 w-[calc(100vw-24px)] max-w-xs bg-white/95 backdrop-blur-md rounded-2xl border border-zinc-200 shadow-2xl flex flex-col overflow-hidden ${
-              isMiniPlayer ? 'right-3 sm:right-auto sm:left-5' : 'right-3 sm:right-5'
+            className={`fixed bottom-20 z-30 w-[calc(100vw-24px)] max-w-xs bg-white/96 backdrop-blur-md rounded-2xl border border-zinc-200 shadow-2xl flex flex-col overflow-hidden ${
+              isMiniPlayer ? 'right-3 sm:right-auto sm:left-4' : 'right-3 sm:right-4'
             }`}
           >
             <div className="px-4 py-2.5 border-b border-zinc-200 flex items-center justify-between">
@@ -1960,22 +2083,26 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowChatDrawer(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                aria-label="关闭聊天室"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="h-56 overflow-y-auto p-3 space-y-2 text-xs">
+            <div className="h-60 overflow-y-auto p-3.5 space-y-2.5 text-xs">
+              {chatHistory.length === 0 && (
+                <div className="text-zinc-400 text-center py-8">打个招呼，或贴视频链接直接点播</div>
+              )}
               {chatHistory.map((m) => (
-                <div key={m.id} className={m.isSystem ? 'text-zinc-400 italic' : 'text-zinc-800'}>
+                <div key={m.id} className={m.isSystem ? 'text-zinc-400 text-[11px]' : 'text-zinc-800 leading-relaxed'}>
                   {!m.isSystem && (
-                    <span className="font-semibold text-zinc-900 mr-1.5">{m.playerName}:</span>
+                    <span className="font-semibold text-zinc-900 mr-1.5">{m.playerName}</span>
                   )}
                   <span>{m.text}</span>
                 </div>
               ))}
             </div>
-            <form onSubmit={sendChatMessage} className="p-2 border-t border-zinc-200 space-y-1.5">
+            <form onSubmit={sendChatMessage} className="p-2.5 border-t border-zinc-200 bg-[#F7F7F8] space-y-1.5">
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"
@@ -1983,27 +2110,27 @@ export default function App() {
                   onChange={(e) => setChatInput(e.target.value)}
                   maxLength={300}
                   autoFocus
-                  placeholder="发消息…（贴视频链接可直接点播）"
-                  className="flex-1 px-3 py-1.5 rounded-xl bg-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-[#FF5A36]/40"
+                  placeholder="发消息或贴视频链接…"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs focus:outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
                 />
                 <button
                   type="submit"
-                  className="p-2 rounded-xl bg-[#FF5A36] text-white hover:bg-[#E84B28] cursor-pointer"
+                  className="h-8 w-8 rounded-xl bg-[#FF5A36] text-white hover:bg-[#E84B28] flex items-center justify-center shrink-0 cursor-pointer"
                   aria-label="发送"
                 >
                   <Send className="w-3.5 h-3.5" />
                 </button>
               </div>
               {chatEnqueueing ? (
-                <div className="px-1 text-[10px] text-[#FF5A36] flex items-center gap-1 leading-tight">
-                  <Loader2 className="w-2.5 h-2.5 shrink-0 animate-spin" />
-                  <span className="truncate">正在解析链接并点播，请稍候…</span>
+                <div className="px-1 text-[11px] text-[#FF5A36] flex items-center gap-1.5 leading-tight">
+                  <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
+                  <span className="truncate">正在解析链接并点播…</span>
                 </div>
               ) : chatVideoLink ? (
-                <div className="px-1 text-[10px] text-[#FF5A36] flex items-center gap-1 leading-tight">
-                  <ListVideo className="w-2.5 h-2.5 shrink-0" />
+                <div className="px-1 text-[11px] text-[#FF5A36] flex items-center gap-1.5 leading-tight">
+                  <ListVideo className="w-3 h-3 shrink-0" />
                   <span className="truncate">
-                    检测到视频链接 · 发送后会同时点播
+                    检测到视频链接 · 发送后自动入队
                     {chatVideoLink.titleHint ? `「${chatVideoLink.titleHint}」` : ''}
                   </span>
                 </div>
@@ -2012,9 +2139,9 @@ export default function App() {
           </div>
         )}
 
-        {/* Toast Notification */}
+        {/* Toast Notification (Bottom-Right above zoom rail, never at top) */}
         {toastMsg && (
-          <div className="fixed top-16 right-4 z-50 px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium shadow-lg">
+          <div className="fixed bottom-20 right-4 z-50 px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-medium shadow-xl">
             {toastMsg}
           </div>
         )}

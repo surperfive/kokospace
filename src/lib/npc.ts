@@ -42,6 +42,7 @@ const ROW: Record<NpcState, number> = {
   look: 2,
   stretch: 2,
   happy: 2,
+  lifted: 2,
 };
 
 const FPS: Record<NpcState, number> = {
@@ -54,6 +55,7 @@ const FPS: Record<NpcState, number> = {
   look: 6.5,
   stretch: 5.5,
   happy: 11,
+  lifted: 14,
 };
 
 export interface NpcPose {

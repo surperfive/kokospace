@@ -34,7 +34,7 @@ export interface RoomPlayer {
   isMicOn: boolean;
   isBroadcasting: boolean;
   isHost: boolean;
-  /** 手上扛着谁：`@screen`（巨幕）或另一个玩家的 id；空手为 null */
+  /** 手上扛着谁：`@screen`（巨幕）、`@npc`（见习修女）或另一个玩家的 id；空手为 null */
   carryTarget?: string | null;
   /** 被谁扛着（只由服务端写，客户端只读） */
   carriedBy?: string | null;
@@ -92,6 +92,8 @@ export const CARRY = {
   screenReach: 140,
   /** 离另一个人多近才能把对方背起来 */
   playerReach: 110,
+  /** 离见习修女多近才能把她举起来 */
+  npcReach: 115,
   /**
    * 巨幕底边的活动范围（世界坐标）。
    * 地板是 40~1560 / 60~1050。底边下限 420 是为了让屏幕能整个举过玩家头顶
@@ -104,6 +106,8 @@ export const CARRY = {
 
 /** `carryTarget` 里代表巨幕的哨兵值 */
 export const SCREEN_CARRY_TARGET = '@screen';
+/** `carryTarget` 里代表巡逻 NPC（见习修女）的哨兵值 */
+export const NPC_CARRY_TARGET = '@npc';
 
 /** 三张地图的 screenRect 都是 x460 y120 680×340，底边中心就是 (800, 460) */
 export const DEFAULT_SCREEN_ANCHOR = { x: 800, y: 460 };
@@ -496,7 +500,7 @@ export class RoomCore {
       if (carryingScreen) {
         this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift);
         screenAnchor = this.screenAnchor;
-      } else if (me.carryTarget) {
+      } else if (me.carryTarget && me.carryTarget !== NPC_CARRY_TARGET) {
         const carried = this.players.get(me.carryTarget);
         if (carried) {
           carried.x = me.x;
@@ -988,6 +992,27 @@ export class RoomCore {
       ];
     }
 
+    if (target === NPC_CARRY_TARGET) {
+      // 见习修女同一时间只能被一个人举起
+      for (const p of this.players.values()) {
+        if (p.carryTarget === NPC_CARRY_TARGET) return [];
+      }
+      me.carryTarget = NPC_CARRY_TARGET;
+      me.isSitting = false;
+      me.seatId = null;
+      return [
+        {
+          kind: 'all',
+          payload: {
+            type: 'player:carried',
+            playerId: me.id,
+            carryTarget: NPC_CARRY_TARGET,
+            carriedBy: null,
+          },
+        },
+      ];
+    }
+
     const other = this.players.get(target);
     if (!other || other.id === me.id) return [];
     // 对方已经被人扛着，或者他自己手上也有东西
@@ -1027,7 +1052,7 @@ export class RoomCore {
         kind: 'all',
         payload: { type: 'screen:moved', anchor: this.screenAnchor, carrierId: null },
       });
-    } else {
+    } else if (target !== NPC_CARRY_TARGET) {
       const other = this.players.get(target);
       if (other) {
         other.carriedBy = null;
@@ -1184,7 +1209,7 @@ export class RoomCore {
         kind: 'all',
         payload: { type: 'screen:moved', anchor: this.screenAnchor, carrierId: null },
       });
-    } else if (leaving.carryTarget) {
+    } else if (leaving.carryTarget && leaving.carryTarget !== NPC_CARRY_TARGET) {
       const carried = this.players.get(leaving.carryTarget);
       if (carried) {
         carried.carriedBy = null;

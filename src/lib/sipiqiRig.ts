@@ -21,7 +21,8 @@ export type RigAnim =
   | 'idle'
   | 'look'
   | 'stretch'
-  | 'happy';
+  | 'happy'
+  | 'lifted';
 
 export interface BoneTf {
   tx: number;
@@ -280,6 +281,32 @@ export function poseBones(anim: RigAnim, theta: number, facing: 1 | -1, blink = 
     const tearScale = 1 + air * 0.1;
     set('Left_Tear', bone(0, air * 2.5, 0, 160, 212, tearScale, tearScale));
     set('Right_Tear', bone(0, air * 2.5, 0, 302, 239, tearScale, tearScale));
+  } else if (anim === 'lifted') {
+    // 被玩家举过头顶：凌空晃荡、四肢扑腾、头纱与鬓角跟着摆动、眼泪微颤
+    const sway = Math.sin(theta * 0.5);
+    const kick = Math.sin(theta);
+    const kickAlt = Math.sin(theta + Math.PI);
+    const rootTy = -10 + Math.sin(theta * 1.0) * 4.5;
+    const rootRot = sway * 6.2;
+    liftY = 10;
+    shadowScale = 0;
+
+    set('Character_Root', bone(0, rootTy, rootRot, 315, 360, 1 - Math.abs(sway) * 0.02, 1 + Math.abs(sway) * 0.024));
+    set('Far_Arm_Rig', bone(-4 + Math.cos(theta) * 4, 8 + kick * 9, 14 + kick * 24, 226, 308));
+    set('Near_Arm_Rig', bone(-2 + Math.cos(theta + Math.PI) * 4, 8 + kickAlt * 9, 14 + kickAlt * 24, 312, 315));
+    set('Far_Leg_Rig', bone(6 + Math.cos(theta + Math.PI) * 7, 11 + kickAlt * 11, -10 + kickAlt * 19, 365, 405));
+    set('Near_Leg_Rig', bone(6 + Math.cos(theta) * 7, 11 + kick * 11, -10 + kick * 19, 405, 405));
+    set('Torso_Rig', bone(0, kick * 1.8, sway * 3.2, 315, 360));
+    set('Skull_Rig', bone(0, 0, -sway * 13 + Math.sin(theta - 0.7) * 8, 412, 332));
+    set('Head_Rig', bone(0, -3 + Math.sin(theta - 0.4) * 2.8, -sway * 7.5 + Math.sin(theta - 0.3) * 4.2, 265, 285));
+    set('Veil_Rig', bone(0, 0, -sway * 9.5 + Math.sin(theta - 0.9) * 6.5, 265, 55));
+    set('Back_Hair_Rig', bone(0, 0, -sway * 8.5 + Math.sin(theta - 0.8) * 5.8, 260, 290));
+    set('Left_Side_Lock', bone(0, 0, -sway * 10.5 + Math.sin(theta - 0.6) * 7.5, 148, 128));
+    set('Right_Side_Lock', bone(0, 0, -sway * 10.5 + Math.sin(theta - 0.85) * 7.5, 345, 140));
+
+    const tearScale = 1.08 + Math.abs(kick) * 0.14;
+    set('Left_Tear', bone(0, kick * 2.4, 0, 160, 212, tearScale, tearScale));
+    set('Right_Tear', bone(0, Math.sin(theta + 0.5) * 2.4, 0, 302, 239, tearScale, tearScale));
   } else {
     // 步态家族：crawl（标准爬行）、stroll（悠闲溜达）、dash（加速狂爬）、tiptoe（偷偷摸摸潜行）
     const isDash = anim === 'dash';

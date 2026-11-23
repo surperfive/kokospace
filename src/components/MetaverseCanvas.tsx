@@ -14,7 +14,13 @@ import {
 } from '../types/metaverse';
 import { drawChibiAvatar } from '../lib/avatarRenderer';
 import { bubbleVisual } from '../lib/chatBubble';
-import { CARRY, DEFAULT_SCREEN_ANCHOR, SCREEN_CARRY_TARGET, distanceToScreen } from '../lib/roomCore';
+import {
+  CARRY,
+  DEFAULT_SCREEN_ANCHOR,
+  NPC_CARRY_TARGET,
+  SCREEN_CARRY_TARGET,
+  distanceToScreen,
+} from '../lib/roomCore';
 import { PROXIMITY_RADIUS } from '../lib/spatialAudio';
 import { CentralCinemaScreen } from './CentralCinemaScreen';
 
@@ -33,6 +39,7 @@ function defaultZoomFor(viewportWidth: number): number {
 /** 靠近可搬运目标 / 正在搬运时的操作提示 */
 type CarryHint =
   | { kind: 'screen' }
+  | { kind: 'npc' }
   | { kind: 'player'; id: string; name: string }
   | { kind: 'holding'; name: string }
   | { kind: 'held'; name: string };
@@ -152,6 +159,22 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   const carryHintRef = useRef<CarryHint | null>(null);
   const carryHintKeyRef = useRef('');
   carryHintRef.current = carryHint;
+  /** NPC 当前在世界里的视觉位置（供靠近检测与点击命中判断使用） */
+  const npcWorldPosRef = useRef<{ x: number; y: number }>({ x: NPC.x0, y: NPC.y });
+  /** NPC 被举起 / 放下时的本地平滑过渡状态（放下后小跑回巡逻路径，不瞬移） */
+  const npcLiftStateRef = useRef<{
+    carrierId: string | null;
+    lastX: number;
+    lastY: number;
+    lastFacing: 1 | -1;
+    dropFrom: { x: number; y: number; at: number } | null;
+  }>({
+    carrierId: null,
+    lastX: NPC.x0,
+    lastY: NPC.y,
+    lastFacing: 1,
+    dropFrom: null,
+  });
   /** 触屏设备不显示快捷键（手机上按不了 F） */
   const showCarryKey =
     typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches;
@@ -292,7 +315,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         360,
         Math.min(
           me.y - 110,
-          Math.max(screenLayout.y + (56 - viewport.height / 2) / zoom, me.y - 300)
+          Math.max(screenLayout.y + (16 - viewport.height / 2) / zoom, me.y - 300)
         )
       );
       setCamera({ x: me.x, y: safeCamY });
@@ -400,13 +423,21 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     }
   };
 
-  /** F 键 / 提示按钮：按当前提示决定是扛起、背人还是放下 */
+  /** F 键 / 提示按钮：按当前提示决定是扛起巨幕、举起修女、背人还是放下 */
   const toggleCarryNearest = () => {
     const hint = carryHintRef.current;
     if (!hint) return;
     if (hint.kind === 'screen') {
+      localPosRef.current.isSitting = false;
+      localPosRef.current.seatId = null;
       latestPropsRef.current.onCarry(SCREEN_CARRY_TARGET);
+    } else if (hint.kind === 'npc') {
+      localPosRef.current.isSitting = false;
+      localPosRef.current.seatId = null;
+      latestPropsRef.current.onCarry(NPC_CARRY_TARGET);
     } else if (hint.kind === 'player') {
+      localPosRef.current.isSitting = false;
+      localPosRef.current.seatId = null;
       latestPropsRef.current.onCarry(hint.id);
     } else {
       latestPropsRef.current.onCarry(null);
@@ -489,7 +520,9 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
       const carriedBy = meState?.carriedBy || null;
       const myCarry = meState?.carryTarget || null;
       const carryingScreen = myCarry === SCREEN_CARRY_TARGET;
+      const carryingNpc = myCarry === NPC_CARRY_TARGET;
       const screenIsCarried = currentPlayers.some((p) => p.carryTarget === SCREEN_CARRY_TARGET);
+      const npcIsCarried = currentPlayers.some((p) => p.carryTarget === NPC_CARRY_TARGET);
 
       // 被扛着：位置完全交给扛人的人，自己不能走也不能坐
       if (carriedBy) {
@@ -530,8 +563,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
       const len = Math.hypot(vx, vy);
       const isMoving = len > 0.05;
-      // 扛着东西走不快：巨幕最沉，背人次之
-      const carrySlow = carryingScreen ? 0.55 : myCarry ? 0.74 : 1;
+      // 扛着东西走不快：巨幕最沉，背人次之，举修女最轻快
+      const carrySlow = carryingScreen ? 0.55 : carryingNpc ? 0.85 : myCarry ? 0.74 : 1;
       const speed = (keys.has('shift') ? 310 : 210) * carrySlow;
 
       if (isMoving) {
@@ -583,11 +616,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
       // Smooth camera follow centered slightly above player so giant screen stays visible
       const targetCamX = lp.x;
       const desiredCamY = lp.y - 110;
-      // 巨幕顶边不能被顶部页头切掉。
-      // 由「屏幕顶边在屏幕上至少露出 56px」反推相机纵坐标上限，
-      // 但相机最多往上偏 300 个世界单位——再偏玩家就被挤到屏幕最底下去了。
-      // 屏幕变高（大屏/自适应放大）时这条约束会自动把相机再抬一点。
-      const screenTopMargin = 56;
+      // 顶栏已移除，留 16px 呼吸边距保证巨幕顶边完整露出
+      const screenTopMargin = 16;
       const screenSafeCamY =
         screenRectNow.y + (screenTopMargin - viewportNow.height / 2) / currentZoom;
       // 巨幕被人扛走时不再拿它的顶边约束相机——那块屏跟着人跑，约束会把镜头拽走
@@ -608,13 +638,15 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         const seat = lp.isSitting || myCarry || carriedBy ? null : findNearestSeat(lp.x, lp.y, items);
         setNearbySeat((prev) => (prev?.id === seat?.id ? prev : seat));
 
-        // 搬运提示：手里有东西 > 被人扛着 > 附近有人 > 附近有巨幕
+        // 搬运提示：手里有东西 > 被人扛着 > 附近的人 / 修女（按距离取最近） > 附近有巨幕
         let nextHint: CarryHint | null = null;
         if (carriedBy) {
           const carrier = currentPlayers.find((p) => p.id === carriedBy);
           nextHint = { kind: 'held', name: carrier?.name || '队友' };
         } else if (myCarry === SCREEN_CARRY_TARGET) {
           nextHint = { kind: 'holding', name: '巨幕' };
+        } else if (myCarry === NPC_CARRY_TARGET) {
+          nextHint = { kind: 'holding', name: NPC.name };
         } else if (myCarry) {
           const held = currentPlayers.find((p) => p.id === myCarry);
           nextHint = { kind: 'holding', name: held?.name || '队友' };
@@ -629,7 +661,12 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
               bestPlayer = p;
             }
           }
-          if (bestPlayer) {
+          const npcPos = npcWorldPosRef.current;
+          const npcDist = !npcIsCarried ? Math.hypot(npcPos.x - lp.x, npcPos.y - lp.y) : Infinity;
+
+          if (npcDist <= CARRY.npcReach && (!bestPlayer || npcDist < bestDist)) {
+            nextHint = { kind: 'npc' };
+          } else if (bestPlayer) {
             nextHint = { kind: 'player', id: bestPlayer.id, name: bestPlayer.name };
           } else if (
             !screenIsCarried &&
@@ -641,7 +678,13 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           }
         }
         const hintKey = nextHint
-          ? `${nextHint.kind}:${nextHint.kind === 'player' ? nextHint.id : nextHint.kind === 'screen' ? '' : nextHint.name}`
+          ? `${nextHint.kind}:${
+              nextHint.kind === 'player'
+                ? nextHint.id
+                : nextHint.kind === 'screen' || nextHint.kind === 'npc'
+                ? ''
+                : nextHint.name
+            }`
           : '';
         if (hintKey !== carryHintKeyRef.current) {
           carryHintKeyRef.current = hintKey;
@@ -793,26 +836,91 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
               chatBubbleRise: bubbleView?.rise,
               hideShadow: piggyback,
               hideName: piggyback,
+              isCarrying: !piggyback && Boolean(p.carryTarget),
             });
             ctx.restore();
           };
 
           // 房间共识时间：所有人算出来的 NPC 位置与动作一致
           const npcElapsedMs = Date.now() - (Number(clockOffsetMs) || 0);
-          const npcPose = npcPoseAt(npcElapsedMs);
-          let npcDrawn = false;
+          const baseNpcPose = npcPoseAt(npcElapsedMs);
+          const npcCarrier = renderList.find((p) => p.carryTarget === NPC_CARRY_TARGET) ?? null;
+          const liftState = npcLiftStateRef.current;
+
+          let groundNpcPose: NpcPose = baseNpcPose;
+          if (npcCarrier) {
+            liftState.carrierId = npcCarrier.id;
+            liftState.lastX = npcCarrier.x;
+            liftState.lastY = npcCarrier.y;
+            if (npcCarrier.dir === 'left') liftState.lastFacing = -1;
+            else if (npcCarrier.dir === 'right') liftState.lastFacing = 1;
+            liftState.dropFrom = null;
+            npcWorldPosRef.current = { x: npcCarrier.x, y: npcCarrier.y };
+          } else {
+            if (liftState.carrierId) {
+              // 刚被放下：从玩家身旁平滑蹦回巡逻路线，不瞬移
+              liftState.dropFrom = {
+                x: Math.max(85, Math.min(theme.worldWidth - 85, liftState.lastX + liftState.lastFacing * 28)),
+                y: Math.max(120, Math.min(theme.worldHeight - 85, liftState.lastY + 6)),
+                at: now,
+              };
+              liftState.carrierId = null;
+            }
+            if (liftState.dropFrom) {
+              const u = Math.min(1, (now - liftState.dropFrom.at) / 720);
+              const e = 1 - Math.pow(1 - u, 3);
+              const rx = liftState.dropFrom.x + (baseNpcPose.x - liftState.dropFrom.x) * e;
+              const ry = liftState.dropFrom.y + (baseNpcPose.y - liftState.dropFrom.y) * e;
+              const remDx = baseNpcPose.x - rx;
+              const remDist = Math.hypot(remDx, baseNpcPose.y - ry);
+              if (u >= 1 || remDist < 2) {
+                liftState.dropFrom = null;
+              } else {
+                groundNpcPose = {
+                  ...baseNpcPose,
+                  x: rx,
+                  y: ry,
+                  state: remDist > 18 ? 'hop' : baseNpcPose.state,
+                  facing: Math.abs(remDx) > 4 ? (remDx >= 0 ? 1 : -1) : baseNpcPose.facing,
+                  theta: npcElapsedMs * 0.0075,
+                  dust: remDist > 24 ? 0.55 : 0,
+                };
+              }
+            }
+            npcWorldPosRef.current = { x: groundNpcPose.x, y: groundNpcPose.y };
+          }
+
+          let npcDrawn = Boolean(npcCarrier);
 
           for (const p of renderList) {
             // 被扛的人留到最后画，保证压在扛人者身上而不是被挡住
             if (p.carriedBy) continue;
             // NPC 按实时 y 插进玩家序列：站在她前面的玩家能挡住她，反之亦然
-            if (!npcDrawn && npcPose.y < p.y) {
+            if (!npcDrawn && groundNpcPose.y < p.y) {
               npcDrawn = true;
-              drawNpc(ctx, npcPose, npcElapsedMs);
+              drawNpc(ctx, groundNpcPose, npcElapsedMs);
             }
             drawPlayer(p);
           }
-          if (!npcDrawn) drawNpc(ctx, npcPose, npcElapsedMs);
+          if (!npcDrawn) drawNpc(ctx, groundNpcPose, npcElapsedMs);
+
+          // 被举在头顶的见习修女：画在所有地面玩家之后，压在举人者头顶双手之上
+          if (npcCarrier) {
+            const bob = npcCarrier.isMoving ? Math.sin(now / 120) * 2.5 : Math.sin(now / 360) * 1.2;
+            const liftedPose: NpcPose = {
+              state: 'lifted',
+              row: 2,
+              frame: Math.floor((npcElapsedMs / 1000) * 14) % NPC.cols,
+              x: npcCarrier.x,
+              y: npcCarrier.y - 36 + bob,
+              facing: liftState.lastFacing,
+              theta: npcElapsedMs * 0.0082,
+              blink: baseNpcPose.blink,
+              dust: 0,
+            };
+            drawNpc(ctx, liftedPose, npcElapsedMs, { scale: 0.86, hideShadow: true, lifted: true });
+          }
+
           for (const p of renderList) {
             if (!p.carriedBy) continue;
             const carrier = renderList.find((c) => c.id === p.carriedBy);
@@ -851,6 +959,22 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     if (isEditingScene) {
       onPlaceOrRemoveFurniture(worldX, worldY);
       return;
+    }
+
+    // 点到附近的见习修女：直接举起（与按 F / 点下方提示按钮等价）
+    const meNow = players.find((p) => p.id === localPlayerId);
+    const npcCarriedByAny = players.some((p) => p.carryTarget === NPC_CARRY_TARGET);
+    if (!npcCarriedByAny && !meNow?.carryTarget && !meNow?.carriedBy) {
+      const npcPos = npcWorldPosRef.current;
+      const hitNpc = Math.hypot(npcPos.x - worldX, npcPos.y - 34 - worldY) < 42;
+      const nearNpc =
+        Math.hypot(npcPos.x - localPosRef.current.x, npcPos.y - localPosRef.current.y) <= CARRY.npcReach;
+      if (hitNpc && nearNpc) {
+        localPosRef.current.isSitting = false;
+        localPosRef.current.seatId = null;
+        onCarry(NPC_CARRY_TARGET);
+        return;
+      }
     }
 
     // Check if user tapped directly on a nearby sittable chair
@@ -996,15 +1120,15 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
       {/* Contextual prompts: 搬运 / 坐下 */}
       {!isEditingScene && (carryHint || nearbySeat || localMe?.isSitting) && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
           {carryHint && (
             <button
               type="button"
               onClick={toggleCarryNearest}
-              className={`px-4 py-2 rounded-xl text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-2 transition-transform active:scale-95 cursor-pointer ${
+              className={`h-9 px-4 rounded-xl text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-2 transition-transform active:scale-95 whitespace-nowrap cursor-pointer ${
                 carryHint.kind === 'held'
-                  ? 'bg-amber-500/95 hover:bg-amber-500 text-white'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-white'
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                  : 'bg-zinc-900/92 hover:bg-zinc-800 text-white'
               }`}
             >
               <span>{carryLabel(carryHint, showCarryKey)}</span>
@@ -1014,7 +1138,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             <button
               type="button"
               onClick={toggleSitNearest}
-              className="px-4 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
+              className="h-9 px-4 rounded-xl bg-zinc-900/92 hover:bg-zinc-800 text-white text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-2 transition-transform active:scale-95 whitespace-nowrap cursor-pointer"
             >
               <span>
                 {localMe?.isSitting
@@ -1026,31 +1150,33 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         </div>
       )}
 
-      {/* Desktop Zoom Controls */}
-      <div className="hidden md:flex fixed right-4 bottom-24 z-20 flex-col gap-1 bg-white/90 backdrop-blur-md border border-zinc-200 rounded-xl p-1 shadow-sm">
+      {/* Desktop Zoom Controls (Horizontal Stepper aligned with Bottom Dock) */}
+      <div className="hidden xl:flex fixed right-4 bottom-4 z-20 h-12 items-center gap-0.5 bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl px-1.5 shadow-lg">
         <button
           type="button"
-          onClick={() => setZoom((z) => Math.min(1.45, z + 0.12))}
-          className="w-8 h-8 rounded-lg hover:bg-zinc-100 text-zinc-700 font-semibold text-sm cursor-pointer"
-          title="放大视角"
+          onClick={() => setZoom((z) => Math.max(0.52, z - 0.12))}
+          className="w-8 h-9 rounded-xl hover:bg-zinc-100 text-zinc-700 font-semibold text-sm transition-colors cursor-pointer"
+          title="缩小视角"
+          aria-label="缩小视角"
         >
-          +
+          −
         </button>
         <button
           type="button"
           onClick={() => setZoom(defaultZoomFor(viewport.width))}
-          className="w-8 h-6 rounded-lg hover:bg-zinc-100 text-zinc-500 font-mono text-[10px] tabular-nums cursor-pointer"
+          className="px-2 h-9 rounded-xl hover:bg-zinc-100 text-zinc-600 font-mono text-[11px] tabular-nums transition-colors cursor-pointer"
           title="重置缩放"
         >
           {Math.round(zoom * 100)}%
         </button>
         <button
           type="button"
-          onClick={() => setZoom((z) => Math.max(0.52, z - 0.12))}
-          className="w-8 h-8 rounded-lg hover:bg-zinc-100 text-zinc-700 font-semibold text-sm cursor-pointer"
-          title="缩小视角"
+          onClick={() => setZoom((z) => Math.min(1.45, z + 0.12))}
+          className="w-8 h-9 rounded-xl hover:bg-zinc-100 text-zinc-700 font-semibold text-sm transition-colors cursor-pointer"
+          title="放大视角"
+          aria-label="放大视角"
         >
-          −
+          +
         </button>
       </div>
     </div>
@@ -1062,6 +1188,8 @@ function carryLabel(hint: CarryHint, showKey: boolean): string {
   switch (hint.kind) {
     case 'screen':
       return `扛起巨幕${k}`;
+    case 'npc':
+      return `举起 ${NPC.name}${k}`;
     case 'player':
       return `背起 ${hint.name}${k}`;
     case 'holding':
@@ -1225,9 +1353,15 @@ function useRig() {
   }
 }
 
-function drawNpc(ctx: CanvasRenderingContext2D, pose: NpcPose, elapsedMs: number): NpcPose {
-  const w = NPC.size;
-  const h = NPC.size;
+function drawNpc(
+  ctx: CanvasRenderingContext2D,
+  pose: NpcPose,
+  elapsedMs: number,
+  opts?: { scale?: number; hideShadow?: boolean; lifted?: boolean }
+): NpcPose {
+  const scale = opts?.scale ?? 1;
+  const w = NPC.size * scale;
+  const h = NPC.size * scale;
   const px = pose.x;
   const py = pose.y;
 
@@ -1235,19 +1369,21 @@ function drawNpc(ctx: CanvasRenderingContext2D, pose: NpcPose, elapsedMs: number
   const bones = rig ? poseBones(pose.state, pose.theta, pose.facing, pose.blink) : null;
   const rigScale = rig ? w / rig.viewBox.w : 1;
 
-  // 地面软阴影：跟着骨骼起伏/蹦跳自动缩放与压扁
-  ctx.save();
-  const shadowScale = bones ? bones.shadowScale : 1;
-  const shadowSquash = bones ? bones.shadowSquash : 1;
-  const baseRy = pose.state === 'idle' || pose.state === 'look' ? 0.09 : 0.075;
-  ctx.fillStyle = `rgba(24, 24, 27, ${(0.13 * Math.min(1, shadowScale)).toFixed(3)})`;
-  ctx.beginPath();
-  ctx.ellipse(px, py + 2, w * 0.3 * shadowScale, w * baseRy * shadowScale * shadowSquash, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  // 地面软阴影：跟着骨骼起伏/蹦跳自动缩放与压扁（被举起在半空时不画）
+  if (!opts?.hideShadow) {
+    ctx.save();
+    const shadowScale = bones ? bones.shadowScale : 1;
+    const shadowSquash = bones ? bones.shadowSquash : 1;
+    const baseRy = pose.state === 'idle' || pose.state === 'look' ? 0.09 : 0.075;
+    ctx.fillStyle = `rgba(24, 24, 27, ${(0.13 * Math.min(1, shadowScale)).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(px, py + 2, w * 0.3 * shadowScale, w * baseRy * shadowScale * shadowSquash, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   // 加速狂爬 / 兔跳落地时的轻柔小烟尘
-  if (pose.dust > 0.05) {
+  if (!opts?.lifted && pose.dust > 0.05) {
     ctx.save();
     const backDir = -pose.facing;
     for (let i = 0; i < 3; i++) {
@@ -1291,7 +1427,7 @@ function drawNpc(ctx: CanvasRenderingContext2D, pose: NpcPose, elapsedMs: number
     }
   }
 
-  // 名字：比玩家淡一档，蹦跳时轻轻跟着浮动
+  // 名字：比玩家淡一档，蹦跳或被举起时轻轻跟着浮动
   ctx.save();
   ctx.font = '600 10px "Plus Jakarta Sans", "PingFang SC", sans-serif';
   ctx.textAlign = 'center';
