@@ -4,9 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
-import { RoomCore, sanitizeRoomId, type Outbound } from './src/lib/roomCore';
-import { fetchVideoMeta } from './src/lib/videoMeta';
-import { proxyAiChat } from './src/lib/aiProxy';
+import { RoomCore, sanitizeRoomId, type Outbound } from './src/lib/roomCore.ts';
+import { fetchVideoMeta } from './src/lib/videoMeta.ts';
+import { proxyAiChat } from './src/lib/aiProxy.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

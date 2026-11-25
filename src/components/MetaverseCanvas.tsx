@@ -616,8 +616,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
       // Smooth camera follow centered slightly above player so giant screen stays visible
       const targetCamX = lp.x;
       const desiredCamY = lp.y - 110;
-      // 顶栏已移除，留 16px 呼吸边距保证巨幕顶边完整露出
-      const screenTopMargin = 16;
+      // 留出顶部轻浮动栏高度的呼吸边距，保证巨幕顶边完整露出不被遮挡
+      const screenTopMargin = 72;
       const screenSafeCamY =
         screenRectNow.y + (screenTopMargin - viewportNow.height / 2) / currentZoom;
       // 巨幕被人扛走时不再拿它的顶边约束相机——那块屏跟着人跑，约束会把镜头拽走
@@ -837,6 +837,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
               hideShadow: piggyback,
               hideName: piggyback,
               isCarrying: !piggyback && Boolean(p.carryTarget),
+              rigKey: p.id,
             });
             ctx.restore();
           };
@@ -1150,8 +1151,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         </div>
       )}
 
-      {/* Desktop Zoom Controls (Horizontal Stepper aligned with Bottom Dock) */}
-      <div className="hidden xl:flex fixed right-4 bottom-4 z-20 h-12 items-center gap-0.5 bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl px-1.5 shadow-lg">
+      {/* Desktop/Tablet Zoom Controls (Horizontal Stepper aligned with Bottom Dock) */}
+      <div className="hidden md:flex fixed right-4 bottom-4 z-20 h-12 items-center gap-0.5 bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl px-1.5 shadow-lg">
         <button
           type="button"
           onClick={() => setZoom((z) => Math.max(0.52, z - 0.12))}

@@ -86,7 +86,17 @@ export default function App() {
   const [avatar, setAvatar] = useState<AvatarConfig>(() => {
     try {
       const saved = localStorage.getItem('koko_avatar');
-      return saved ? { ...DEFAULT_AVATAR, ...JSON.parse(saved) } : DEFAULT_AVATAR;
+      if (!saved) return DEFAULT_AVATAR;
+      const parsed = JSON.parse(saved) as Partial<AvatarConfig>;
+      // 旧版未修改过的默认小人平滑升级为新默认形象，保留用户已自定义过的穿搭
+      const isLegacyDefault =
+        parsed.skinColor === '#FCD5B5' &&
+        parsed.hairStyle === 'bob' &&
+        parsed.hairColor === '#2C2623' &&
+        parsed.outfitColor === '#FF5A36' &&
+        parsed.accessory === 'headphones';
+      if (isLegacyDefault) return DEFAULT_AVATAR;
+      return { ...DEFAULT_AVATAR, ...parsed };
     } catch {
       return DEFAULT_AVATAR;
     }
@@ -1580,16 +1590,16 @@ export default function App() {
         )}
 
         {/* Mobile Virtual Joystick (Bottom-Left Thumb Zone above dock) */}
-        {hasEnteredRoom && isTouchDevice && !isTheaterFocused && (
+        {hasEnteredRoom && isTouchDevice && !isTheaterFocused && !isEditingScene && (
           <div className="fixed left-4 bottom-20 z-30">
             <MobileJoystick onVectorChange={setJoystickVec} />
           </div>
         )}
 
-        {/* Bottom-Left: Unified Brand + Room Context + Connection Popover (Desktop xl+) */}
-        {hasEnteredRoom && (
-          <div className="hidden xl:flex fixed left-4 bottom-4 z-30 items-center gap-2">
-            <div className="relative">
+        {/* Top-Left: Room Identity, Online Count & Connection Popover */}
+        {hasEnteredRoom && !isTheaterFocused && (
+          <div className="fixed top-3.5 left-3.5 z-30 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-132px)] sm:max-w-none">
+            <div className="relative min-w-0">
               <button
                 type="button"
                 onClick={() => {
@@ -1597,35 +1607,37 @@ export default function App() {
                   setShowMoreMenu(false);
                   setShowLinkMenu((v) => !v);
                 }}
-                className="h-12 px-3.5 rounded-2xl bg-white/95 backdrop-blur-md border border-zinc-200 shadow-lg hover:bg-white text-xs text-zinc-700 flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer"
+                className="h-11 px-3.5 rounded-2xl bg-white/94 backdrop-blur-md border border-zinc-200/90 shadow-sm hover:bg-white text-xs text-zinc-700 flex items-center gap-2 transition-colors whitespace-nowrap max-w-full cursor-pointer"
                 title="房间信息、连接方式与快捷键"
               >
-                <span className="font-display font-bold text-sm tracking-tight text-zinc-900">
+                <span className="font-display font-bold text-sm tracking-tight text-zinc-900 shrink-0">
                   KokoSpace
                 </span>
+                <span className="hidden sm:inline text-zinc-300" aria-hidden="true">·</span>
+                <span className="hidden sm:inline text-zinc-700 font-medium truncate max-w-[140px]">
+                  {currentMapTheme.name}
+                </span>
                 <span className="text-zinc-300" aria-hidden="true">·</span>
-                <span className="text-zinc-700 font-medium">{currentMapTheme.name}</span>
-                <span className="text-zinc-300" aria-hidden="true">·</span>
-                <span className="tabular-nums text-zinc-500">{players.length} 人</span>
-                <span className="text-zinc-300" aria-hidden="true">·</span>
+                <span className="tabular-nums text-zinc-500 shrink-0">{players.length} 人</span>
+                <span className="hidden md:inline text-zinc-300" aria-hidden="true">·</span>
                 <span
-                  className={
+                  className={`hidden md:inline shrink-0 ${
                     manuallyDisconnected
                       ? 'text-red-600 font-medium'
                       : linkMode === 'direct'
                         ? 'text-emerald-700 font-medium'
                         : 'text-zinc-600'
-                  }
+                  }`}
                 >
                   {connectionLabel}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
               </button>
 
               {showLinkMenu && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowLinkMenu(false)} />
-                  <div className="absolute left-0 bottom-full mb-2.5 z-40 w-72 rounded-2xl border border-zinc-200 bg-white p-2.5 shadow-2xl space-y-1.5">
+                  <div className="absolute left-0 top-full mt-2 z-40 w-72 rounded-2xl border border-zinc-200 bg-white p-2.5 shadow-2xl space-y-1.5">
                     <div className="px-2.5 pt-1 pb-1.5 border-b border-zinc-100 flex items-center justify-between text-[11px]">
                       <span className="font-semibold text-zinc-800 font-mono">房间 #{roomId}</span>
                       <span className={isBroadcasting ? 'text-[#FF5A36] font-medium' : 'text-zinc-500'}>
@@ -1733,7 +1745,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleToggleConnection}
-                className="h-12 px-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg transition-colors whitespace-nowrap cursor-pointer"
+                className="h-11 px-2.5 sm:px-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>重连</span>
@@ -1742,10 +1754,78 @@ export default function App() {
           </div>
         )}
 
-        {/* Bottom-Center: Unified Master Action Dock (All Primary Controls Consolidated Here) */}
+        {/* Top-Right: Space Appearance, Scene, Mini Window & Primary Invite CTA */}
+        {hasEnteredRoom && !isTheaterFocused && (
+          <div className="fixed top-3.5 right-3.5 z-30 flex items-center gap-2">
+            <div className="h-11 px-1.5 rounded-2xl bg-white/94 backdrop-blur-md border border-zinc-200/90 shadow-sm flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmojiMenu(false);
+                  setShowMoreMenu(false);
+                  setShowLinkMenu(false);
+                  setShowSceneModal(true);
+                }}
+                className={`hidden sm:flex h-8.5 px-2.5 rounded-xl text-xs font-medium items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  showSceneModal ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+                }`}
+                title="场景布置与地图切换"
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span>场景</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmojiMenu(false);
+                  setShowMoreMenu(false);
+                  setShowLinkMenu(false);
+                  setShowAvatarModal(true);
+                }}
+                className={`h-8.5 px-2.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  showAvatarModal ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+                }`}
+                title="更换角色形象与穿搭"
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full border border-black/15 shrink-0"
+                  style={{ backgroundColor: avatar.hairColor }}
+                  aria-hidden="true"
+                />
+                <span className="hidden sm:inline">换装</span>
+                <UserCog className="w-3.5 h-3.5 sm:hidden" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleMini}
+                className={`hidden md:flex h-8.5 px-2.5 rounded-xl text-xs font-medium items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  isMiniPlayer ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+                }`}
+                title={isMiniPlayer ? '关闭悬浮小窗' : '打开悬浮小窗'}
+              >
+                <PictureInPicture2 className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">小窗</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={copyInviteLink}
+              className="h-11 px-3.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center justify-center gap-1.5 shadow-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              title="复制房间邀请链接"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{copiedLink ? '已复制' : '邀请'}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Bottom-Center: Streamlined Live Social & Cinema Action Dock */}
         {hasEnteredRoom && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 h-12 flex items-center gap-0.5 sm:gap-1 px-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-zinc-200 shadow-xl">
-            {/* Group 1: Voice & Broadcast */}
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 h-12 max-w-[calc(100vw-16px)] flex items-center gap-0.5 sm:gap-1 px-1.5 rounded-2xl bg-white/95 backdrop-blur-md border border-zinc-200 shadow-xl">
+            {/* Group 1: Voice & Stage Broadcast */}
             <button
               type="button"
               onClick={toggleMic}
@@ -1778,7 +1858,7 @@ export default function App() {
 
             <div className="w-px h-5 bg-zinc-200 mx-0.5 shrink-0" />
 
-            {/* Group 2: Cinema, AI & Space */}
+            {/* Group 2: Cinema Queue & AI Director */}
             <button
               type="button"
               onClick={() => {
@@ -1822,41 +1902,9 @@ export default function App() {
               <span className="hidden sm:inline">AI 导演</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setShowEmojiMenu(false);
-                setShowMoreMenu(false);
-                setShowSceneModal(true);
-              }}
-              className={`hidden md:flex h-9 px-3 rounded-xl text-xs font-medium items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                showSceneModal ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
-              }`}
-              title="场景布置与地图切换"
-            >
-              <MapIcon className="w-4 h-4" />
-              <span>场景</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowEmojiMenu(false);
-                setShowMoreMenu(false);
-                setShowAvatarModal(true);
-              }}
-              className={`hidden md:flex h-9 px-3 rounded-xl text-xs font-medium items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                showAvatarModal ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
-              }`}
-              title="编辑虚拟化身"
-            >
-              <UserCog className="w-4 h-4" />
-              <span>化身</span>
-            </button>
-
             <div className="w-px h-5 bg-zinc-200 mx-0.5 shrink-0" />
 
-            {/* Group 3: Chat, Reactions & Mini Player */}
+            {/* Group 3: Chat, Reactions & Overflow Tools */}
             <button
               type="button"
               onClick={() => {
@@ -1910,31 +1958,6 @@ export default function App() {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={handleToggleMini}
-              className={`hidden md:flex h-9 px-2.5 rounded-xl text-xs font-medium items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                isMiniPlayer ? 'bg-zinc-900 text-white' : 'text-zinc-700 hover:bg-zinc-100'
-              }`}
-              title={isMiniPlayer ? '关闭悬浮小窗' : '打开悬浮小窗'}
-            >
-              <PictureInPicture2 className="w-4 h-4" />
-              <span className="hidden lg:inline">小窗</span>
-            </button>
-
-            <div className="w-px h-5 bg-zinc-200 mx-0.5 shrink-0" />
-
-            {/* Group 4: Invite Primary CTA & Overflow Tools */}
-            <button
-              type="button"
-              onClick={copyInviteLink}
-              className="h-9 px-2.5 sm:px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              title="复制房间邀请链接"
-            >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{copiedLink ? '已复制' : '邀请'}</span>
-            </button>
-
             <div className="relative">
               <button
                 type="button"
@@ -1956,38 +1979,16 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
                   <div className="absolute bottom-13 right-0 z-40 w-56 p-1.5 rounded-2xl bg-white border border-zinc-200 shadow-2xl space-y-0.5">
-                    {/* Room status summary on compact viewports where bottom-left pill is hidden */}
-                    <div className="xl:hidden px-3 py-2 border-b border-zinc-100 mb-1">
-                      <div className="text-xs font-semibold text-zinc-900 flex items-center justify-between">
-                        <span>{currentMapTheme.name}</span>
-                        <span className="text-[11px] font-mono text-zinc-400">#{roomId}</span>
-                      </div>
-                      <div className="text-[11px] text-zinc-500 mt-0.5 tabular-nums">
-                        {players.length} 人在线 · {connectionLabel}
-                      </div>
-                    </div>
-
                     <button
                       type="button"
                       onClick={() => {
                         setShowMoreMenu(false);
                         setShowSceneModal(true);
                       }}
-                      className="md:hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                      className="sm:hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
                     >
                       <MapIcon className="w-3.5 h-3.5 text-zinc-500" />
                       <span>场景布置</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMoreMenu(false);
-                        setShowAvatarModal(true);
-                      }}
-                      className="md:hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
-                    >
-                      <UserCog className="w-3.5 h-3.5 text-zinc-500" />
-                      <span>虚拟化身</span>
                     </button>
                     <button
                       type="button"
@@ -2023,47 +2024,6 @@ export default function App() {
                       <BookOpen className="w-3.5 h-3.5 text-zinc-500" />
                       <span>开发文档与插件</span>
                     </button>
-
-                    {isRoomHost && !manuallyDisconnected && (
-                      <div className="xl:hidden border-t border-zinc-100 pt-1 mt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowMoreMenu(false);
-                            const next = linkMode === 'direct' || linkMode === 'connecting' ? 'cloud' : 'direct';
-                            linkSwitchRef.current?.(next);
-                          }}
-                          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 hover:bg-zinc-100 cursor-pointer"
-                        >
-                          <span>切换连接方式</span>
-                          <span className="text-[11px] text-zinc-400">
-                            {linkMode === 'direct' || linkMode === 'connecting' ? '改用云端' : '改用直连'}
-                          </span>
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="xl:hidden border-t border-zinc-100 pt-1 mt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowMoreMenu(false);
-                          handleToggleConnection();
-                        }}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer ${
-                          manuallyDisconnected
-                            ? 'text-emerald-700 hover:bg-emerald-50'
-                            : 'text-red-600 hover:bg-red-50'
-                        }`}
-                      >
-                        {manuallyDisconnected ? (
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        ) : (
-                          <Power className="w-3.5 h-3.5" />
-                        )}
-                        <span>{manuallyDisconnected ? '重新连接房间' : '断开房间连接'}</span>
-                      </button>
-                    </div>
                   </div>
                 </>
               )}

@@ -178,18 +178,18 @@ export const BUILTIN_VIDEOS: VideoQueueItem[] = [
 ];
 
 export const DEFAULT_AVATAR: AvatarConfig = {
-  skinColor: '#FCD5B5',
-  hairStyle: 'bob',
-  hairColor: '#2C2623',
+  skinColor: '#FDB892',
+  hairStyle: 'bun',
+  hairColor: '#FF6268',
   eyeStyle: 'smile',
   outfitStyle: 'hoodie',
-  outfitColor: '#FF5A36',
-  accessory: 'headphones',
+  outfitColor: '#FCE041',
+  accessory: 'none',
 };
 
-export const SKIN_PALETTE = ['#FDE4CF', '#FCD5B5', '#F3C19D', '#D99B72', '#A86E4B'];
-export const HAIR_PALETTE = ['#2C2623', '#5A3E2B', '#D97736', '#EAB308', '#3B82F6', '#EC4899', '#E2E8F0'];
-export const OUTFIT_PALETTE = ['#FF5A36', '#2563EB', '#10B981', '#8B5CF6', '#F59E0B', '#18181B', '#EC4899'];
+export const SKIN_PALETTE = ['#FDB892', '#FFE0C8', '#F6C6A5', '#E29E79', '#B97856'];
+export const HAIR_PALETTE = ['#FF6268', '#3B2C2A', '#6D4735', '#E88346', '#F4B942', '#4E82D8', '#B77CF0', '#EAE6E1'];
+export const OUTFIT_PALETTE = ['#FCE041', '#FF6E59', '#3886C4', '#4DB888', '#8F6EE8', '#353844', '#F47EA6'];
 
 export const BUILTIN_REACTIONS = [
   { emoji: '❤️', label: '比心' },

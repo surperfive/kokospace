@@ -6,7 +6,7 @@
  * 点播链路不能因为第三方站点慢而卡住。
  */
 
-import { extractBiliPage, parseVideoUrlServer } from './roomCore';
+import { extractBiliPage, parseVideoUrlServer } from './roomCore.ts';
 
 export interface VideoMetaResult {
   sourceType: string;

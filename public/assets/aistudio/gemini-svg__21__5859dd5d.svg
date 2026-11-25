@@ -1,0 +1,489 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 660" width="800" height="660">
+  <defs>
+    
+    <linearGradient id="bunMainGrad" x1="0.35" y1="0.05" x2="0.65" y2="0.95">
+      <stop offset="0%" stop-color="#FF7075" />
+      <stop offset="55%" stop-color="#FF6268" />
+      <stop offset="85%" stop-color="#EB525B" />
+      <stop offset="100%" stop-color="#C8424D" />
+    </linearGradient>
+
+    <linearGradient id="bangsMainGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#FF7277" />
+      <stop offset="62%" stop-color="#FF6268" />
+      <stop offset="100%" stop-color="#EE535C" />
+    </linearGradient>
+
+    <linearGradient id="browGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#E24E58" />
+      <stop offset="78%" stop-color="#D74550" />
+      <stop offset="100%" stop-color="#B93944" />
+    </linearGradient>
+
+    
+    <linearGradient id="faceSkinGrad" x1="0.5" y1="0.1" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#FFC29D" />
+      <stop offset="70%" stop-color="#FDB892" />
+      <stop offset="92%" stop-color="#F3A687" />
+      <stop offset="100%" stop-color="#D99882" />
+    </linearGradient>
+
+    <linearGradient id="foreheadShadowGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#EE7B70" stop-opacity="0.95" />
+      <stop offset="68%" stop-color="#F6927D" stop-opacity="0.82" />
+      <stop offset="100%" stop-color="#FDB892" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="handGrad" x1="0.35" y1="0.1" x2="0.55" y2="1">
+      <stop offset="0%" stop-color="#FFC4A0" />
+      <stop offset="62%" stop-color="#FDB68F" />
+      <stop offset="88%" stop-color="#E69A82" />
+      <stop offset="100%" stop-color="#CE8370" />
+    </linearGradient>
+
+    <linearGradient id="armGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#F3847B" />
+      <stop offset="65%" stop-color="#EC7570" />
+      <stop offset="100%" stop-color="#D56764" />
+    </linearGradient>
+
+    <linearGradient id="neckShadowGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#C65855" />
+      <stop offset="32%" stop-color="#EA7B75" />
+      <stop offset="100%" stop-color="#F18B7F" />
+    </linearGradient>
+
+    <linearGradient id="legGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#EE7A74" />
+      <stop offset="28%" stop-color="#F8A187" />
+      <stop offset="85%" stop-color="#FDB48E" />
+      <stop offset="100%" stop-color="#F59F82" />
+    </linearGradient>
+
+    
+    <linearGradient id="jacketMainGrad" x1="0.4" y1="0.05" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#FFEE58" />
+      <stop offset="45%" stop-color="#FCE041" />
+      <stop offset="85%" stop-color="#F3C133" />
+      <stop offset="100%" stop-color="#DFA12A" />
+    </linearGradient>
+
+    <linearGradient id="collarLeftGrad" x1="0.2" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0%" stop-color="#E5A72F" />
+      <stop offset="48%" stop-color="#F2C039" />
+      <stop offset="85%" stop-color="#FBE054" />
+      <stop offset="100%" stop-color="#E8B030" />
+    </linearGradient>
+
+    <linearGradient id="collarRightGrad" x1="0.8" y1="0.1" x2="0.15" y2="0.95">
+      <stop offset="0%" stop-color="#E6A930" />
+      <stop offset="45%" stop-color="#F4C73E" />
+      <stop offset="82%" stop-color="#FDE65E" />
+      <stop offset="100%" stop-color="#EBB432" />
+    </linearGradient>
+
+    
+    <linearGradient id="skirtGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#226CA0" />
+      <stop offset="25%" stop-color="#2C7DB5" />
+      <stop offset="80%" stop-color="#226EA3" />
+      <stop offset="100%" stop-color="#17527F" />
+    </linearGradient>
+
+    
+    <clipPath id="headClip">
+      <path d="M 314 256 C 309 286 309 325 314 348 C 321 372 349 384 402 384 C 455 384 483 372 490 348 C 495 325 495 286 490 256 C 483 226 448 212 402 212 C 356 212 321 226 314 256 Z" />
+    </clipPath>
+
+    
+    <clipPath id="shirtClip">
+      <path d="M 381 408 L 424 408 L 425 449 L 380 449 Z" />
+    </clipPath>
+  </defs>
+
+  
+  <g id="Background">
+    <rect id="Wall" x="0" y="0" width="800" height="447" fill="#FFFFFF" />
+    <rect id="Floor" x="0" y="447" width="800" height="213" fill="#FDFEE7" />
+  </g>
+
+  
+  <g id="Ground_Shadow">
+    
+    <path d="M 347 458
+             C 325 456 293 456 271 459
+             C 254 461 244 467 245 473
+             C 246 477 254 479 258 481
+             C 249 485 243 490 246 494
+             C 248 497 252 498 250 500
+             C 242 503 236 506 239 509
+             C 243 513 257 512 263 515
+             C 265 516 263 519 266 522
+             C 272 529 296 534 323 539
+             C 343 543 367 547 386 546
+             C 402 545 415 540 427 532
+             C 439 524 446 516 444 507
+             C 441 495 414 484 378 472
+             C 365 467 357 460 347 458 Z" fill="#CBE0D3" />
+    
+    <path d="M 244 509
+             C 231 507 220 511 220 517
+             C 220 523 233 525 246 523
+             C 253 522 257 519 259 517
+             C 266 518 273 517 272 513
+             C 271 510 256 510 244 509 Z" fill="#CBE0D3" />
+    
+    <path d="M 465 505
+             C 454 505 446 509 448 514
+             C 450 519 466 520 478 519
+             C 487 518 491 514 488 510
+             C 485 506 475 505 465 505 Z" fill="#CBE0D3" />
+  </g>
+
+  
+  <g id="Hair_Bun">
+    
+    <path d="M 326 221
+             C 319 214 316 202 318 190
+             L 326 159
+             C 330 146 341 134 353 128
+             L 382 118
+             C 396 116 413 116 426 119
+             L 452 129
+             C 464 137 473 149 477 162
+             L 483 190
+             C 485 203 482 215 474 223
+             C 453 230 348 230 326 221 Z" fill="url(#bunMainGrad)" />
+    
+    <path d="M 358 144 C 354 162 355 182 362 199 C 365 204 371 203 369 196 C 364 180 363 162 365 146 C 366 140 359 139 358 144 Z" fill="#F0535B" opacity="0.65" />
+    <path d="M 432 146 C 435 164 434 184 428 201 C 426 206 420 205 422 198 C 426 183 427 164 425 148 C 424 142 431 141 432 146 Z" fill="#F0535B" opacity="0.65" />
+    
+    <path d="M 320 186
+             C 334 195 356 201 384 202
+             C 424 203 456 205 482 213
+             C 480 218 477 221 474 224
+             C 451 232 349 232 326 221
+             C 319 213 317 199 320 186 Z" fill="#C9414C" opacity="0.88" />
+  </g>
+
+  
+  <g id="Legs_and_Sandals">
+    
+    <g id="Left_Leg">
+      <path d="M 364 493 L 387 495 L 386 542 C 386 546 364 546 364 542 Z" fill="url(#legGrad)" />
+      
+      <path d="M 368 495 L 384 496 L 382 522 C 381 527 371 527 370 521 Z" fill="#F07B74" opacity="0.72" />
+      
+      <path d="M 361 541 C 361 549 367 553 376 553 C 385 553 390 549 390 542 C 390 537 386 535 376 535 C 366 535 361 537 361 541 Z" fill="#BC4D18" />
+      <path d="M 362 539 C 362 546 368 550 376 550 C 384 550 389 546 389 540 C 389 535 384 533 376 533 C 368 533 362 535 362 539 Z" fill="#F07824" />
+      
+      <ellipse cx="375.5" cy="538.5" rx="9.5" ry="5.5" fill="#FDB892" />
+      
+      <path d="M 363 538 C 368 531 383 531 388 538 C 388 541 385 542 383 540 C 379 536 372 536 367 540 C 365 542 363 541 363 538 Z" fill="#FDE052" />
+    </g>
+
+    
+    <g id="Right_Leg">
+      <path d="M 418 495 L 441 493 L 441 542 C 441 546 419 546 419 542 Z" fill="url(#legGrad)" />
+      
+      <path d="M 421 496 L 437 495 L 436 521 C 435 527 425 527 423 522 Z" fill="#F07B74" opacity="0.72" />
+      
+      <path d="M 415 542 C 415 549 421 552 430 552 C 439 552 444 548 444 541 C 444 536 439 534 430 534 C 420 534 415 537 415 542 Z" fill="#BC4D18" />
+      <path d="M 416 540 C 416 546 422 549 430 549 C 438 549 443 545 443 539 C 443 534 438 532 430 532 C 422 532 416 535 416 540 Z" fill="#F07824" />
+      
+      <ellipse cx="429.5" cy="538" rx="9.5" ry="5.5" fill="#FDB892" />
+      
+      <path d="M 417 538 C 422 531 437 531 442 538 C 442 541 439 541 437 539 C 433 535 426 535 421 539 C 419 541 417 540 417 538 Z" fill="#FDE052" />
+    </g>
+  </g>
+
+  
+  <g id="Skirt">
+    <path d="M 351 446
+             L 452 446
+             C 454 464 455 480 452 490
+             C 448 497 428 500 402 500
+             C 376 500 356 497 351 490
+             C 348 480 349 464 351 446 Z" fill="url(#skirtGrad)" />
+    
+    <path d="M 351 462 C 358 477 371 482 384 477 C 378 483 363 484 350 478 Z" fill="#164F7B" opacity="0.65" />
+    <path d="M 453 462 C 446 477 433 482 420 477 C 426 483 441 484 453 478 Z" fill="#164F7B" opacity="0.65" />
+  </g>
+
+  
+  <g id="Arms_and_Hands">
+    
+    <g id="Left_Arm_Hand">
+      <rect x="285" y="396" width="28" height="19" rx="6" fill="url(#armGrad)" />
+      <path d="M 268 380
+               C 282 380 292 391 292 405
+               C 292 420 281 431 268 431
+               C 254 431 244 420 244 405
+               C 244 391 254 380 268 380 Z" fill="url(#handGrad)" />
+      
+      <path d="M 248 416 C 254 425 267 429 281 424 C 275 430 259 432 250 424 Z" fill="#C97E6C" opacity="0.55" />
+    </g>
+
+    
+    <g id="Right_Arm_Hand">
+      <rect x="488" y="394" width="28" height="19" rx="6" fill="url(#armGrad)" />
+      <path d="M 532 378
+               C 546 378 556 389 556 403
+               C 556 418 545 429 532 429
+               C 518 429 508 418 508 403
+               C 508 389 518 378 532 378 Z" fill="url(#handGrad)" />
+      
+      <path d="M 513 414 C 520 423 534 427 547 422 C 540 428 524 430 515 422 Z" fill="#C97E6C" opacity="0.55" />
+    </g>
+  </g>
+
+  
+  <g id="Inner_Shirt">
+    
+    <path d="M 368 380 L 436 380 L 431 413 L 373 413 Z" fill="url(#neckShadowGrad)" />
+    
+    <path d="M 372 380 C 386 388 418 388 432 380 L 429 390 C 414 395 390 395 375 390 Z" fill="#B94E4B" opacity="0.7" />
+
+    
+    <g clip-path="url(#shirtClip)">
+      <rect x="380" y="408" width="46" height="42" fill="#FFFCE2" />
+      <rect x="382" y="408" width="8" height="42" fill="#F4EC8E" />
+      <rect x="398" y="408" width="9" height="42" fill="#F4EC8E" />
+      <rect x="415" y="408" width="9" height="42" fill="#F4EC8E" />
+      
+      <rect x="380" y="408" width="46" height="6" fill="#E3C87B" opacity="0.38" />
+    </g>
+  </g>
+
+  
+  <g id="Yellow_Jacket">
+    
+    <g id="Jacket_Left">
+      <path d="M 341 378
+               C 329 381 318 386 307 391
+               C 305 400 306 413 309 422
+               C 314 424 318 425 322 426
+               C 326 432 332 435 338 436
+               C 336 447 336 461 341 471
+               C 347 478 361 480 374 476
+               C 383 472 387 460 386 441
+               L 385 412
+               L 341 378 Z" fill="url(#jacketMainGrad)" />
+      
+      <path d="M 307 391 C 311 391 314 395 315 407 C 316 416 315 422 311 423 L 309 422 C 306 413 305 400 307 391 Z" fill="#DDA72B" />
+      <path d="M 311 419 C 320 422 329 428 338 431 L 338 436 C 331 435 325 432 321 426 C 317 425 313 424 311 422 Z" fill="#B78323" />
+      
+      <path d="M 339 436 C 350 436 359 445 360 458 C 361 469 357 475 352 477 C 344 475 339 469 337 458 C 336 449 337 441 339 436 Z" fill="#F1B22E" />
+      
+      <path d="M 338 456 C 340 468 346 474 357 476 C 367 478 377 475 382 469 C 377 477 363 480 350 477 C 341 474 337 466 338 456 Z" fill="#B58024" opacity="0.85" />
+      
+      <path d="M 338 380 C 333 391 335 408 345 419 C 338 420 326 415 322 405 C 320 397 325 385 338 380 Z" fill="#ECC035" opacity="0.7" />
+    </g>
+
+    
+    <g id="Jacket_Right">
+      <path d="M 463 378
+               C 475 381 486 386 497 390
+               C 499 399 498 412 495 421
+               C 490 423 486 424 482 425
+               C 478 431 472 434 466 435
+               C 468 446 468 460 463 470
+               C 457 477 443 479 430 475
+               C 421 471 418 459 419 440
+               L 421 412
+               L 463 378 Z" fill="url(#jacketMainGrad)" />
+      
+      <path d="M 497 390 C 493 390 490 395 489 406 C 488 415 489 421 493 422 L 495 421 C 498 412 499 399 497 390 Z" fill="#E3B333" />
+      <path d="M 493 418 C 484 421 475 427 466 430 L 466 435 C 473 434 479 431 483 425 C 487 424 491 423 493 421 Z" fill="#C79229" />
+      
+      <path d="M 465 435 C 454 436 446 446 446 458 C 446 468 450 474 455 476 C 462 474 466 468 467 457 C 468 448 467 440 465 435 Z" fill="#F2B430" />
+      
+      <path d="M 466 456 C 464 468 458 474 447 476 C 437 477 427 474 422 468 C 427 476 441 479 454 476 C 463 473 467 466 466 456 Z" fill="#C08A28" opacity="0.8" />
+    </g>
+
+    
+    <g id="Jacket_Collar">
+      
+      <path d="M 341 378
+               C 338 391 344 406 358 414
+               C 369 420 381 421 386 416
+               C 389 411 386 400 381 391
+               C 375 384 359 380 341 378 Z" fill="url(#collarLeftGrad)" />
+      
+      <path d="M 341 387 C 343 402 355 414 373 418 C 380 419 385 418 386 415" fill="none" stroke="#C88A23" stroke-width="2.6" stroke-linecap="round" />
+      
+      <path d="M 353 383 C 351 394 355 405 364 413" fill="none" stroke="#D39224" stroke-width="2.2" stroke-linecap="round" opacity="0.7" />
+      <path d="M 366 385 C 365 395 369 406 376 415" fill="none" stroke="#D39224" stroke-width="2.2" stroke-linecap="round" opacity="0.7" />
+
+      
+      <path d="M 463 378
+               C 466 391 460 406 446 414
+               C 435 420 424 421 420 416
+               C 417 411 420 400 426 391
+               C 432 384 446 380 463 378 Z" fill="url(#collarRightGrad)" />
+      
+      <path d="M 463 387 C 461 402 449 414 432 418 C 425 419 421 418 420 415" fill="none" stroke="#C98B24" stroke-width="2.6" stroke-linecap="round" />
+      
+      <path d="M 451 383 C 453 394 449 405 440 413" fill="none" stroke="#D49325" stroke-width="2.2" stroke-linecap="round" opacity="0.7" />
+      <path d="M 438 385 C 439 395 435 406 428 415" fill="none" stroke="#D49325" stroke-width="2.2" stroke-linecap="round" opacity="0.7" />
+    </g>
+  </g>
+
+  
+  <g id="Ears">
+    
+    <g id="Left_Ear">
+      <path d="M 314 298
+               C 304 292 291 295 285 305
+               C 279 316 280 335 287 347
+               C 293 356 306 359 317 354 Z" fill="#FDB58E" />
+      
+      <path d="M 284 337 C 288 349 299 354 316 351 L 317 354 C 304 359 292 356 286 346 Z" fill="#D58670" />
+      
+      <path d="M 311 314
+               C 305 304 293 305 289 315
+               C 286 324 289 338 296 344
+               C 300 347 306 346 309 341
+               C 304 339 299 334 299 327
+               C 299 320 305 316 311 320 Z" fill="#E25E5B" />
+      
+      <path d="M 312 322 C 306 319 301 323 301 329 C 301 335 306 339 312 337 Z" fill="#F49A81" />
+    </g>
+
+    
+    <g id="Right_Ear">
+      <path d="M 489 298
+               C 499 292 512 295 518 305
+               C 524 316 523 335 516 347
+               C 510 356 497 359 486 354 Z" fill="#FDB58E" />
+      
+      <path d="M 519 337 C 515 349 504 354 487 351 L 486 354 C 499 359 511 356 517 346 Z" fill="#D58670" />
+      
+      <path d="M 492 314
+               C 498 304 510 305 514 315
+               C 517 324 514 338 507 344
+               C 503 347 497 346 494 341
+               C 499 339 504 334 504 327
+               C 504 320 498 316 492 320 Z" fill="#E25E5B" />
+      
+      <path d="M 491 322 C 497 319 502 323 502 329 C 502 335 497 339 491 337 Z" fill="#F49A81" />
+    </g>
+  </g>
+
+  
+  <g id="Head_and_Face">
+    
+    <path d="M 314 256
+             C 309 286 309 325 314 348
+             C 321 372 349 384 402 384
+             C 455 384 483 372 490 348
+             C 495 325 495 286 490 256
+             C 483 226 448 212 402 212
+             C 356 212 321 226 314 256 Z" fill="url(#faceSkinGrad)" />
+
+    
+    <g clip-path="url(#headClip)">
+      
+      <path d="M 304 218 L 500 218 L 500 282 C 468 269 434 265 402 265 C 370 265 336 269 304 282 Z" fill="url(#foreheadShadowGrad)" />
+      
+      <ellipse cx="324" cy="349" rx="20" ry="25" transform="rotate(-12 324 349)" fill="#F4847A" opacity="0.88" />
+      
+      <ellipse cx="480" cy="349" rx="20" ry="25" transform="rotate(12 480 349)" fill="#F4847A" opacity="0.88" />
+      
+      <path d="M 326 364 C 352 374 452 374 478 364 L 484 388 L 320 388 Z" fill="#D59680" opacity="0.72" />
+    </g>
+  </g>
+
+  
+  <g id="Facial_Features">
+    
+    <g id="Left_Eye">
+      <path d="M 355 270
+               C 377 270 388 286 388 308
+               C 388 331 374 345 353 345
+               C 332 345 322 330 322 308
+               C 322 286 334 270 355 270 Z" fill="#FFFBE9" stroke="#523733" stroke-width="4.2" />
+      
+      <ellipse cx="354" cy="306.5" rx="20.5" ry="23.5" fill="#49322F" />
+    </g>
+
+    
+    <g id="Right_Eye">
+      <path d="M 454 270
+               C 475 270 486 286 486 308
+               C 486 330 476 345 455 345
+               C 434 345 422 331 422 308
+               C 422 286 433 270 454 270 Z" fill="#FFFBE9" stroke="#523733" stroke-width="4.2" />
+      
+      <ellipse cx="454.5" cy="306.5" rx="20.5" ry="23.5" fill="#49322F" />
+    </g>
+
+    
+    <path id="Mouth" d="M 383 347.5 C 389 351 397 350.2 404.5 347.5 C 412 350.2 420 351 426 347.5" fill="none" stroke="#47312D" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  
+  <g id="Hair_Bangs_and_Brows">
+    
+    <path d="M 301 286
+             C 301 292 304 297 312 299
+             C 314 287 316 277 319 267
+             C 334 259 354 255 385 254
+             C 392 246 397 235 401 227
+             C 406 235 411 246 417 254
+             C 448 255 468 259 485 267
+             C 488 277 490 287 492 299
+             C 500 297 503 292 504 285
+             L 500 256 L 305 256 Z" fill="#D34550" />
+
+    
+    <path d="M 301 286
+             C 302 260 307 241 319 228
+             C 337 210 369 197 401 196
+             C 434 197 466 210 484 228
+             C 496 241 502 260 504 285
+             C 496 286 492 282 489 266
+             C 473 255 452 248 416 247
+             C 412 238 408 228 401 221
+             C 394 228 390 238 386 247
+             C 350 248 331 255 316 266
+             C 312 282 308 286 301 286 Z" fill="url(#bangsMainGrad)" />
+
+    
+    <path d="M 344 223 C 338 232 335 243 335 254" fill="none" stroke="#E55059" stroke-width="3.2" stroke-linecap="round" opacity="0.72" />
+    <path d="M 461 224 C 466 233 469 243 469 254" fill="none" stroke="#E55059" stroke-width="3.2" stroke-linecap="round" opacity="0.72" />
+    
+    <path d="M 302 267 C 306 271 310 272 315 270 L 312 299 C 304 297 301 292 301 285 Z" fill="#DA4B56" opacity="0.65" />
+    <path d="M 503 267 C 499 271 495 272 490 270 L 492 299 C 500 297 503 292 504 285 Z" fill="#DA4B56" opacity="0.65" />
+
+    
+    <g id="Left_Eyebrow">
+      <path d="M 355 242
+               L 375 243
+               C 380 244 385 248 387 253
+               L 388 267
+               C 387 273 382 278 376 280
+               L 357 279
+               C 351 277 346 272 345 266
+               L 345 252
+               C 346 247 350 243 355 242 Z" fill="url(#browGrad)" />
+      
+      <path d="M 346 266 C 349 273 356 277 375 277 C 381 276 385 273 387 268 C 386 274 382 279 376 280 L 357 279 C 351 277 347 272 346 266 Z" fill="#AC343E" opacity="0.8" />
+    </g>
+
+    
+    <g id="Right_Eyebrow">
+      <path d="M 434 243
+               L 454 242
+               C 459 243 463 247 464 252
+               L 464 266
+               C 463 272 458 277 452 279
+               L 433 280
+               C 427 278 422 273 421 267
+               L 422 253
+               C 424 248 429 244 434 243 Z" fill="url(#browGrad)" />
+      
+      <path d="M 422 268 C 424 273 428 276 434 277 C 453 277 460 273 463 266 C 462 272 458 277 452 279 L 433 280 C 427 279 423 274 422 268 Z" fill="#AC343E" opacity="0.8" />
+    </g>
+  </g>
+</svg>

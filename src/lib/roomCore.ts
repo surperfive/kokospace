@@ -158,12 +158,12 @@ export type Outbound =
   | { kind: 'all'; payload: unknown; excludeId?: string };
 
 export const DEFAULT_AVATAR: RoomAvatar = {
-  skinColor: '#FCD5B5',
-  hairStyle: 'short',
-  hairColor: '#2C2623',
+  skinColor: '#FDB892',
+  hairStyle: 'bun',
+  hairColor: '#FF6268',
   eyeStyle: 'smile',
   outfitStyle: 'hoodie',
-  outfitColor: '#FF5A36',
+  outfitColor: '#FCE041',
   accessory: 'none',
 };
 
