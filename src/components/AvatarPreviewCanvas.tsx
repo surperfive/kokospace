@@ -41,15 +41,14 @@ export const AvatarPreviewCanvas: React.FC<AvatarPreviewCanvasProps> = ({
           ctx.clearRect(0, 0, size, size);
 
           if (showStudioBackdrop) {
-            // 呼应参考图的纯白墙面 + 淡奶黄地坪层次
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, size, size * 0.64);
-            ctx.fillStyle = '#FDFEE7';
-            ctx.fillRect(0, size * 0.64, size, size * 0.36);
+            ctx.fillRect(0, 0, size, size * 0.67);
+            ctx.fillStyle = '#F3F7FD';
+            ctx.fillRect(0, size * 0.67, size, size * 0.33);
           }
 
-          const previewScale = size / 118;
-          ctx.translate(size / 2, size * 0.59);
+          const previewScale = size / 116;
+          ctx.translate(size / 2, size * 0.61);
           ctx.scale(previewScale, previewScale);
           drawChibiAvatar(ctx, {
             avatar,

@@ -20,7 +20,7 @@ import {
   X,
   MessageCircle,
 } from 'lucide-react';
-import { StageWidgetPlugin, VideoState } from '../types/metaverse';
+import { MapThemeDefinition, StageWidgetPlugin, VideoState } from '../types/metaverse';
 
 interface CentralCinemaScreenProps {
   videoState: VideoState;
@@ -30,6 +30,8 @@ interface CentralCinemaScreenProps {
   viewport: { width: number; height: number };
   accentColor: string;
   frameColor: string;
+  /** 嵌入底图镂空拱窗时的前景遮罩配置（聚焦/小窗/被扛走时自动关闭） */
+  frameOverlay?: MapThemeDefinition['screenFrameOverlay'];
   isTheaterFocused: boolean;
   onToggleTheaterFocus: () => void;
   /** 小窗模式：巨幕缩成可拖动的浮窗，走动时也能看。与影院聚焦互斥 */
@@ -92,6 +94,7 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   viewport,
   accentColor,
   frameColor,
+  frameOverlay,
   isTheaterFocused,
   onToggleTheaterFocus,
   isMini = false,
@@ -1139,6 +1142,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
   /** 大屏把 B 站画面让给小窗（小窗那边的 iframe 才是唯一解，避免双重出声） */
   const deferBiliIframe = !isMini && deferMedia && item.sourceType === 'bilibili';
 
+  /** 嵌入房间背景镂空拱窗模式：画面铺满窗口，拱门/吊灯/音箱前景图盖在边缘之上，控制条内缩在无遮挡区域 */
+  const isEmbedded = Boolean(frameOverlay) && !isTheaterFocused && !isMini && !pipMode;
+
   return (
     <>
       {isTheaterFocused && (
@@ -1151,26 +1157,40 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
         ref={miniBoxRef}
         style={{
           ...containerStyle,
-          backgroundColor: frameColor,
+          backgroundColor: isEmbedded ? '#0F172A' : frameColor,
         }}
         className={`group overflow-hidden flex flex-col select-none ${
-          pipMode
+          pipMode || isEmbedded
             ? 'rounded-none border-0 shadow-none'
             : isMini
             ? 'rounded-xl border-2 border-zinc-900 shadow-xl'
             : 'rounded-2xl border-4 border-zinc-900 shadow-2xl transition-[box-shadow] duration-200'
         } ${isTheaterFocused ? 'ring-4 ring-white/20' : ''}`}
       >
-        {/* Top Screen Header Strip（小窗模式下整条就是拖动把手） */}
+        {/* Top Screen Header Strip（小窗模式下整条就是拖动把手；嵌入拱窗时悬浮在吊灯之间的安全区域） */}
         <div
           onPointerDown={isMini && !pipMode ? handleMiniPointerDown : undefined}
           onPointerMove={isMini && !pipMode ? handleMiniPointerMove : undefined}
           onPointerUp={isMini && !pipMode ? endMiniDrag : undefined}
           onPointerCancel={isMini && !pipMode ? endMiniDrag : undefined}
-          style={isMini && !pipMode ? { touchAction: 'none', cursor: 'grab' } : undefined}
-          className={`flex items-center justify-between gap-2 bg-zinc-900/95 text-white text-xs shrink-0 border-b border-white/10 ${
-            isMini ? 'px-2 py-1' : 'px-3 py-1.5'
-          }`}
+          style={
+            isMini && !pipMode
+              ? { touchAction: 'none', cursor: 'grab' }
+              : isEmbedded
+              ? {
+                  top: `${frameOverlay?.topInsetPct ?? 6.5}%`,
+                  left: `${frameOverlay?.topSideInsetPct ?? 16.5}%`,
+                  right: `${frameOverlay?.topSideInsetPct ?? 16.5}%`,
+                }
+              : undefined
+          }
+          className={
+            isEmbedded
+              ? 'absolute z-30 flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-zinc-950/82 hover:bg-zinc-950/92 text-white text-xs border border-white/15 shadow-lg transition-colors'
+              : `flex items-center justify-between gap-2 bg-zinc-900/95 text-white text-xs shrink-0 border-b border-white/10 ${
+                  isMini ? 'px-2 py-1' : 'px-3 py-1.5'
+                }`
+          }
         >
           <div className="flex items-center gap-2 min-w-0">
             <Radio className="w-3.5 h-3.5 shrink-0" style={{ color: accentColor }} />
@@ -1373,7 +1393,11 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
                 endedSentKeyRef.current = endKey;
                 onMediaEndedRef.current?.();
               }}
-              className="w-full h-full object-contain bg-black"
+              className={
+                isEmbedded
+                  ? 'w-full h-full object-cover bg-black'
+                  : 'w-full h-full object-contain bg-black'
+              }
             />
           )}
 
@@ -1425,7 +1449,9 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
             <button
               type="button"
               onClick={handleUnmuteClick}
-              className="absolute bottom-3 left-3 z-20 flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1.5 text-[11px] font-medium text-white ring-1 ring-white/20 backdrop-blur transition-colors hover:bg-black/90 cursor-pointer"
+              className={`absolute z-30 flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1.5 text-[11px] font-medium text-white ring-1 ring-white/20 backdrop-blur transition-colors hover:bg-black/90 cursor-pointer ${
+                isEmbedded ? 'bottom-12 left-[11%]' : 'bottom-3 left-3'
+              }`}
               title="浏览器默认拦截带声音的自动播放，点一下即可开启声音"
             >
               <VolumeX className="w-3.5 h-3.5 shrink-0" />
@@ -1744,9 +1770,35 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
           )}
         </div>
 
-        {/* Bottom Synchronized Controls（小窗太窄，藏起来，只留顶栏） */}
+        {/* 嵌入底图镂空拱窗时的前景遮罩：拱门/吊灯/麦克风标牌/左右音箱覆盖在视频边缘之上 */}
+        {isEmbedded && frameOverlay && (
+          <img
+            src={frameOverlay.src}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            className="pointer-events-none absolute inset-0 z-20 w-full h-full select-none"
+          />
+        )}
+
+        {/* Bottom Synchronized Controls（小窗太窄，藏起来，只留顶栏；嵌入拱窗时悬浮在左右音箱之间） */}
         {showBottomControls && !isMini && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/95 text-white text-xs shrink-0 border-t border-white/10">
+          <div
+            style={
+              isEmbedded
+                ? {
+                    left: `${frameOverlay?.bottomSideInsetPct ?? 9.5}%`,
+                    right: `${frameOverlay?.bottomSideInsetPct ?? 9.5}%`,
+                    bottom: '2%',
+                  }
+                : undefined
+            }
+            className={
+              isEmbedded
+                ? 'absolute z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950/85 hover:bg-zinc-950/95 text-white text-xs border border-white/15 shadow-lg transition-colors'
+                : 'flex items-center gap-2 px-3 py-1.5 bg-zinc-900/95 text-white text-xs shrink-0 border-t border-white/10'
+            }
+          >
             <button
               type="button"
               onClick={() => {
@@ -1901,7 +1953,22 @@ export const CentralCinemaScreen: React.FC<CentralCinemaScreenProps> = ({
 
         {/* B 站专用对齐条：播放器是黑盒，只能靠重建 iframe 对齐起播点 */}
         {isBilibili && (
-          <div className="flex items-center gap-2 px-3 py-1 bg-zinc-900/95 text-white text-xs shrink-0 border-t border-white/10">
+          <div
+            style={
+              isEmbedded
+                ? {
+                    left: `${frameOverlay?.bottomSideInsetPct ?? 9.5}%`,
+                    right: `${frameOverlay?.bottomSideInsetPct ?? 9.5}%`,
+                    bottom: '2%',
+                  }
+                : undefined
+            }
+            className={
+              isEmbedded
+                ? 'absolute z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950/88 text-white text-xs border border-white/15 shadow-lg'
+                : 'flex items-center gap-2 px-3 py-1 bg-zinc-900/95 text-white text-xs shrink-0 border-t border-white/10'
+            }
+          >
             <span className="text-[10px] px-1 py-0.5 rounded bg-[#FB7299]/25 text-[#FB7299] font-bold shrink-0 leading-none">
               B站
             </span>

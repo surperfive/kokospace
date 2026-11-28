@@ -16,22 +16,30 @@ import { drawChibiAvatar } from '../lib/avatarRenderer';
 import { bubbleVisual } from '../lib/chatBubble';
 import {
   CARRY,
-  DEFAULT_SCREEN_ANCHOR,
   NPC_CARRY_TARGET,
   SCREEN_CARRY_TARGET,
   distanceToScreen,
+  getMapBounds,
 } from '../lib/roomCore';
 import { PROXIMITY_RADIUS } from '../lib/spatialAudio';
+import {
+  computeScreenWorldRect,
+  getNpcWorldScale,
+  getPlayerWorldScale,
+  isScreenEmbeddedInCutout,
+} from '../lib/screenLayout';
 import { CentralCinemaScreen } from './CentralCinemaScreen';
 
 /**
  * 各设备的默认缩放。
- * 手机保持 0.62（视野小，需要看得远一点）；
- * PC 从 0.92 起步，屏幕越大越往里推一点，最多 1.12——
- * 否则 2K/4K 显示器上整张地图缩得太远，巨幕和人都显得很小。
- * 「复位」按钮也用这个值，保证复位到该设备的舒适视野。
+ * 嵌入背景拱窗的大地图在 PC 上用略广视角，保证顶部麦克风挂牌、吊灯、拱窗视频与舞台沙发同屏完整露出；
+ * 手机保持舒适全屏视野。
  */
-function defaultZoomFor(viewportWidth: number): number {
+function defaultZoomFor(viewportWidth: number, hasEmbeddedScreen = false): number {
+  if (hasEmbeddedScreen) {
+    if (viewportWidth < 768) return 0.48;
+    return Math.max(0.74, Math.min(0.92, viewportWidth / 1850));
+  }
   if (viewportWidth < 768) return 0.62;
   return Math.max(0.92, Math.min(1.12, viewportWidth / 1560));
 }
@@ -152,8 +160,14 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const [zoom, setZoom] = useState(() => defaultZoomFor(window.innerWidth));
-  const [camera, setCamera] = useState({ x: 800, y: 540 });
+  const [zoom, setZoom] = useState(() =>
+    defaultZoomFor(window.innerWidth, Boolean(mapTheme.screenFrameOverlay))
+  );
+  const [camera, setCamera] = useState(() => ({
+    x: mapTheme.spawnPoint.x,
+    y: Math.max(360, mapTheme.spawnPoint.y - (mapTheme.screenFrameOverlay ? 370 : 260)),
+  }));
+  const pendingCamSnapRef = useRef<{ x: number; y: number } | null>(null);
   const [nearbySeat, setNearbySeat] = useState<FurnitureItem | null>(null);
   const [carryHint, setCarryHint] = useState<CarryHint | null>(null);
   const carryHintRef = useRef<CarryHint | null>(null);
@@ -197,35 +211,27 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     [players]
   );
 
-  const screenLayout = useMemo(() => {
-    const base = mapTheme.screenRect;
-    const narrow = viewport.width < 768;
-    const refZoom = narrow ? 0.62 : 0.92;
-    const targetRatio = narrow ? 0.86 : 0.5;
-    const raw = (viewport.width * targetRatio) / (base.width * refZoom);
-    // 横屏手机这类「宽但很矮」的视口，光按宽度算会把屏幕竖向撑爆，
-    // 再补一条高度约束：巨幕最多占视口高度的 45%。
-    const rawByHeight = (viewport.height * 0.45) / (base.height * refZoom);
-    // 上限 1.17：屏幕底边固定在 y=460，而地板从 y=60 开始画，
-    // 再往上长就会顶出地板边界，看着像挂在房间外面。1.17 时顶边正好落在 62 左右。
-    // 下限 0.72：太小的话屏幕里的播放器 UI 会挤成一团。
-    const scale = Math.max(0.72, Math.min(1.17, raw, rawByHeight));
-    // 锚点：默认是地图里那块，被人搬走后换成房间状态里的实时位置
-    const cx = screenAnchor?.x ?? base.x + base.width / 2;
-    const bottom = screenAnchor?.y ?? base.y + base.height;
-    const width = base.width * scale;
-    const height = base.height * scale;
-    return { x: cx - width / 2, y: bottom - height, width, height };
-  }, [
-    mapTheme.screenRect.x,
-    mapTheme.screenRect.y,
-    mapTheme.screenRect.width,
-    mapTheme.screenRect.height,
-    viewport.width,
-    viewport.height,
-    screenAnchor?.x,
-    screenAnchor?.y,
-  ]);
+  const screenLayout = useMemo(
+    () => computeScreenWorldRect(mapTheme, viewport, screenAnchor, screenCarrierId),
+    [
+      mapTheme.screenRect.x,
+      mapTheme.screenRect.y,
+      mapTheme.screenRect.width,
+      mapTheme.screenRect.height,
+      mapTheme.screenFrameOverlay,
+      viewport.width,
+      viewport.height,
+      screenAnchor?.x,
+      screenAnchor?.y,
+      screenCarrierId,
+    ]
+  );
+
+  const isEmbeddedInCutout = isScreenEmbeddedInCutout(
+    mapTheme,
+    screenAnchor,
+    screenCarrierId
+  );
 
   /**
    * 给渲染层和 DOM 层共用的主题副本：
@@ -265,6 +271,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
   const latestPropsRef = useRef({
     mapTheme: renderTheme,
+    baseScreenRect: mapTheme.screenRect,
     screenLayout,
     screenAnchor,
     viewport,
@@ -275,6 +282,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     chatBubbles,
     joystickVector,
     zoom,
+    isEditingScene,
     serverTimeOffsetMs,
     onMoveLocalPlayer,
     onCarry,
@@ -282,6 +290,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
   });
   latestPropsRef.current = {
     mapTheme: renderTheme,
+    baseScreenRect: mapTheme.screenRect,
     screenLayout,
     screenAnchor,
     viewport,
@@ -292,6 +301,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     chatBubbles,
     joystickVector,
     zoom,
+    isEditingScene,
     serverTimeOffsetMs,
     onMoveLocalPlayer,
     onCarry,
@@ -300,6 +310,28 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
   // Sync local ref when server first assigns player position
   const initializedRef = useRef(false);
+  const prevMapIdRef = useRef(mapTheme.id);
+  useEffect(() => {
+    if (prevMapIdRef.current !== mapTheme.id) {
+      prevMapIdRef.current = mapTheme.id;
+      localPosRef.current = {
+        x: mapTheme.spawnPoint.x,
+        y: mapTheme.spawnPoint.y,
+        dir: 'up',
+        isSitting: false,
+        seatId: null,
+      };
+      clickTargetRef.current = null;
+      const snapY = Math.max(
+        360,
+        mapTheme.spawnPoint.y - (mapTheme.screenFrameOverlay ? 370 : 260)
+      );
+      pendingCamSnapRef.current = { x: mapTheme.spawnPoint.x, y: snapY };
+      setCamera({ x: mapTheme.spawnPoint.x, y: snapY });
+      setZoom(defaultZoomFor(viewport.width, Boolean(mapTheme.screenFrameOverlay)));
+    }
+  }, [mapTheme.id, mapTheme.spawnPoint.x, mapTheme.spawnPoint.y, mapTheme.screenFrameOverlay, viewport.width]);
+
   useEffect(() => {
     const me = players.find((p) => p.id === localPlayerId);
     if (me && !initializedRef.current) {
@@ -310,14 +342,17 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         isSitting: me.isSitting,
         seatId: me.seatId || null,
       };
-      // 首帧就直接落到「能看见巨幕顶边」的位置，别先卡在 me.y-90 再慢慢飘上去
+      // 首帧就直接落到「能看见巨幕顶边与拱门」的位置，别先卡在 me.y-90 再慢慢飘上去
+      const topMargin = mapTheme.screenFrameOverlay ? 142 : 72;
+      const maxLift = mapTheme.screenFrameOverlay ? 375 : 340;
       const safeCamY = Math.max(
         360,
         Math.min(
           me.y - 110,
-          Math.max(screenLayout.y + (16 - viewport.height / 2) / zoom, me.y - 300)
+          Math.max(screenLayout.y + (topMargin - viewport.height / 2) / zoom, me.y - maxLift)
         )
       );
+      pendingCamSnapRef.current = { x: me.x, y: safeCamY };
       setCamera({ x: me.x, y: safeCamY });
       initializedRef.current = true;
     }
@@ -479,6 +514,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
 
       const {
         mapTheme: theme,
+        baseScreenRect,
         screenLayout: screenRectNow,
         screenAnchor: anchorNow,
         viewport: viewportNow,
@@ -489,10 +525,19 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         chatBubbles: bubbles,
         joystickVector: joy,
         zoom: currentZoom,
+        isEditingScene: isEditingNow,
         serverTimeOffsetMs: clockOffsetMs,
         onMoveLocalPlayer: emitMove,
         onProximityUpdate: emitProx,
       } = latestPropsRef.current;
+
+      if (pendingCamSnapRef.current) {
+        camX = pendingCamSnapRef.current.x;
+        camY = pendingCamSnapRef.current.y;
+        lastCommittedCamX = camX;
+        lastCommittedCamY = camY;
+        pendingCamSnapRef.current = null;
+      }
 
       const lp = localPosRef.current;
 
@@ -578,9 +623,9 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         let nextY = lp.y + ny * speed * dt;
         if (carryingScreen) {
           // 扛着巨幕：走动范围收窄，保证屏幕不会拖出地板（和服务端用同一套边界）。
-          // 抓取时服务端已把人推到合法范围内，这里直接硬夹。
-          nextX = Math.max(CARRY.screenMinX, Math.min(CARRY.screenMaxX, nextX));
-          nextY = Math.max(CARRY.screenMinY, Math.min(CARRY.screenMaxY, nextY));
+          const bounds = getMapBounds(theme.id);
+          nextX = Math.max(bounds.screenMinX, Math.min(bounds.screenMaxX, nextX));
+          nextY = Math.max(bounds.screenMinY, Math.min(bounds.screenMaxY, nextY));
         }
 
         // 已经卡在障碍里（比如别人把巨幕放你头上）就放行，先让人走出来再恢复正常碰撞，
@@ -616,14 +661,15 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
       // Smooth camera follow centered slightly above player so giant screen stays visible
       const targetCamX = lp.x;
       const desiredCamY = lp.y - 110;
-      // 留出顶部轻浮动栏高度的呼吸边距，保证巨幕顶边完整露出不被遮挡
-      const screenTopMargin = 72;
+      // 留出顶部轻浮动栏与拱门灯具高度的呼吸边距，保证巨幕与拱门完整露出不被遮挡
+      const screenTopMargin = theme.screenFrameOverlay ? 142 : 72;
+      const maxCameraLift = theme.screenFrameOverlay ? 375 : 340;
       const screenSafeCamY =
         screenRectNow.y + (screenTopMargin - viewportNow.height / 2) / currentZoom;
       // 巨幕被人扛走时不再拿它的顶边约束相机——那块屏跟着人跑，约束会把镜头拽走
       const targetCamY = screenIsCarried
         ? Math.max(360, lp.y - 110)
-        : Math.max(360, Math.min(desiredCamY, Math.max(screenSafeCamY, lp.y - 300)));
+        : Math.max(360, Math.min(desiredCamY, Math.max(screenSafeCamY, lp.y - maxCameraLift)));
       camX += (targetCamX - camX) * Math.min(1, dt * 6);
       camY += (targetCamY - camY) * Math.min(1, dt * 6);
       if (Math.abs(camX - lastCommittedCamX) > 0.25 || Math.abs(camY - lastCommittedCamY) > 0.25) {
@@ -671,8 +717,10 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           } else if (
             !screenIsCarried &&
             // 只能从屏幕正面（下方）抓：站在屏幕背后抓会把屏幕举到人身前，反而被整块盖住
-            lp.y > (anchorNow ?? DEFAULT_SCREEN_ANCHOR).y &&
-            distanceToScreen(lp.x, lp.y, anchorNow ?? DEFAULT_SCREEN_ANCHOR) <= CARRY.screenReach
+            (() => {
+              const anchor = anchorNow ?? getMapBounds(theme.id).defaultScreenAnchor;
+              return lp.y > anchor.y && distanceToScreen(lp.x, lp.y, anchor) <= CARRY.screenReach;
+            })()
           ) {
             nextHint = { kind: 'screen' };
           }
@@ -728,7 +776,21 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           ctx.scale(currentZoom, currentZoom);
           ctx.translate(-camX, -camY);
 
-          drawFlatVectorMap(ctx, theme, items);
+          const halfViewW = cw / (2 * currentZoom) + 32;
+          const halfViewH = ch / (2 * currentZoom) + 32;
+          drawFlatVectorMap(
+            ctx,
+            theme,
+            items,
+            isEditingNow,
+            {
+              minX: camX - halfViewW,
+              minY: camY - halfViewH,
+              maxX: camX + halfViewW,
+              maxY: camY + halfViewH,
+            },
+            baseScreenRect
+          );
 
           // Draw local player proximity audio ring
           ctx.save();
@@ -800,6 +862,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           renderList.sort((a, b) => a.y - b.y);
 
           const nowMs = Date.now();
+          const playerScale = getPlayerWorldScale(theme);
+          const npcScale = getNpcWorldScale(theme);
           const drawPlayer = (
             p: PlayerState,
             atX?: number,
@@ -811,12 +875,6 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             const bubbleView = bubble ? bubbleVisual(bubble.text, bubble.expiresAt, nowMs) : null;
             const px = atX ?? p.x;
             const py = atY ?? p.y;
-            ctx.save();
-            if (scale !== 1) {
-              ctx.translate(px, py);
-              ctx.scale(scale, scale);
-              ctx.translate(-px, -py);
-            }
             drawChibiAvatar(ctx, {
               avatar: p.avatar,
               x: px,
@@ -838,13 +896,13 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
               hideName: piggyback,
               isCarrying: !piggyback && Boolean(p.carryTarget),
               rigKey: p.id,
+              worldScale: playerScale * scale,
             });
-            ctx.restore();
           };
 
           // 房间共识时间：所有人算出来的 NPC 位置与动作一致
           const npcElapsedMs = Date.now() - (Number(clockOffsetMs) || 0);
-          const baseNpcPose = npcPoseAt(npcElapsedMs);
+          const baseNpcPose = npcPoseAt(npcElapsedMs, theme.id);
           const npcCarrier = renderList.find((p) => p.carryTarget === NPC_CARRY_TARGET) ?? null;
           const liftState = npcLiftStateRef.current;
 
@@ -860,9 +918,10 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
           } else {
             if (liftState.carrierId) {
               // 刚被放下：从玩家身旁平滑蹦回巡逻路线，不瞬移
+              const bounds = getMapBounds(theme.id);
               liftState.dropFrom = {
-                x: Math.max(85, Math.min(theme.worldWidth - 85, liftState.lastX + liftState.lastFacing * 28)),
-                y: Math.max(120, Math.min(theme.worldHeight - 85, liftState.lastY + 6)),
+                x: Math.max(bounds.minX, Math.min(bounds.maxX, liftState.lastX + liftState.lastFacing * 28)),
+                y: Math.max(bounds.minY, Math.min(bounds.maxY, liftState.lastY + 6)),
                 at: now,
               };
               liftState.carrierId = null;
@@ -899,11 +958,11 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             // NPC 按实时 y 插进玩家序列：站在她前面的玩家能挡住她，反之亦然
             if (!npcDrawn && groundNpcPose.y < p.y) {
               npcDrawn = true;
-              drawNpc(ctx, groundNpcPose, npcElapsedMs);
+              drawNpc(ctx, groundNpcPose, npcElapsedMs, { scale: npcScale });
             }
             drawPlayer(p);
           }
-          if (!npcDrawn) drawNpc(ctx, groundNpcPose, npcElapsedMs);
+          if (!npcDrawn) drawNpc(ctx, groundNpcPose, npcElapsedMs, { scale: npcScale });
 
           // 被举在头顶的见习修女：画在所有地面玩家之后，压在举人者头顶双手之上
           if (npcCarrier) {
@@ -913,13 +972,17 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
               row: 2,
               frame: Math.floor((npcElapsedMs / 1000) * 14) % NPC.cols,
               x: npcCarrier.x,
-              y: npcCarrier.y - 36 + bob,
+              y: npcCarrier.y - 60 * playerScale + bob,
               facing: liftState.lastFacing,
               theta: npcElapsedMs * 0.0082,
               blink: baseNpcPose.blink,
               dust: 0,
             };
-            drawNpc(ctx, liftedPose, npcElapsedMs, { scale: 0.86, hideShadow: true, lifted: true });
+            drawNpc(ctx, liftedPose, npcElapsedMs, {
+              scale: 0.86 * npcScale,
+              hideShadow: true,
+              lifted: true,
+            });
           }
 
           for (const p of renderList) {
@@ -931,7 +994,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
             }
             // 骑在扛人者肩上：抬高到头顶之上、缩小一圈，跟着走路的节奏轻轻晃
             const bob = carrier.isMoving ? Math.sin(now / 120) * 2.5 : 0;
-            drawPlayer(p, carrier.x, carrier.y - 42 + bob, 0.78, true);
+            drawPlayer(p, carrier.x, carrier.y - 62 * playerScale + bob, 0.78, true);
           }
 
           ctx.restore();
@@ -967,7 +1030,10 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
     const npcCarriedByAny = players.some((p) => p.carryTarget === NPC_CARRY_TARGET);
     if (!npcCarriedByAny && !meNow?.carryTarget && !meNow?.carriedBy) {
       const npcPos = npcWorldPosRef.current;
-      const hitNpc = Math.hypot(npcPos.x - worldX, npcPos.y - 34 - worldY) < 42;
+      const npcScaleNow = getNpcWorldScale(mapTheme);
+      const hitNpc =
+        Math.hypot(npcPos.x - worldX, npcPos.y - 34 * npcScaleNow - worldY) <
+        42 * npcScaleNow;
       const nearNpc =
         Math.hypot(npcPos.x - localPosRef.current.x, npcPos.y - localPosRef.current.y) <= CARRY.npcReach;
       if (hitNpc && nearNpc) {
@@ -1037,6 +1103,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         viewport={viewport}
         accentColor={mapTheme.palette.accent}
         frameColor={mapTheme.palette.screenFrame}
+        frameOverlay={isEmbeddedInCutout ? mapTheme.screenFrameOverlay : undefined}
         isTheaterFocused={isTheaterFocused}
         deferMedia={isMini}
         unmuteSignal={unmuteSignal}
@@ -1101,7 +1168,8 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
       <div className="pointer-events-none fixed inset-0 z-20 overflow-hidden">
         {reactions.map((rx) => {
           const sx = viewport.width / 2 + (rx.x - camera.x) * zoom;
-          const sy = viewport.height / 2 + (rx.y - 52 - camera.y) * zoom;
+          const sy =
+            viewport.height / 2 + (rx.y - 68 * getPlayerWorldScale(mapTheme) - camera.y) * zoom;
           return (
             <div
               key={rx.id}
@@ -1164,7 +1232,7 @@ export const MetaverseCanvas: React.FC<MetaverseCanvasProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => setZoom(defaultZoomFor(viewport.width))}
+          onClick={() => setZoom(defaultZoomFor(viewport.width, Boolean(mapTheme.screenFrameOverlay)))}
           className="px-2 h-9 rounded-xl hover:bg-zinc-100 text-zinc-600 font-mono text-[11px] tabular-nums transition-colors cursor-pointer"
           title="重置缩放"
         >
@@ -1214,12 +1282,98 @@ function findNearestSeat(x: number, y: number, furniture: FurnitureItem[]): Furn
   return best;
 }
 
+const mapSvgImageCache = new Map<string, HTMLImageElement>();
+
+function getMapSvgImage(src: string): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null;
+  const cached = mapSvgImageCache.get(src);
+  if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+  const img = new Image();
+  img.src = src;
+  mapSvgImageCache.set(src, img);
+  return null;
+}
+
 function drawFlatVectorMap(
   ctx: CanvasRenderingContext2D,
   theme: MapThemeDefinition,
-  furniture: FurnitureItem[]
+  furniture: FurnitureItem[],
+  isEditingScene = false,
+  viewBounds?: { minX: number; minY: number; maxX: number; maxY: number },
+  baseScreenRect?: { x: number; y: number; width: number; height: number }
 ) {
-  const { worldWidth, worldHeight, palette, zones, screenRect } = theme;
+  const { worldWidth, worldHeight, palette, zones, screenRect, mapSvg } = theme;
+  const cutoutBacking = baseScreenRect ?? screenRect;
+
+  if (mapSvg) {
+    // 整张高保真底图模式（按视口裁剪绘制，大幅减少高分辨率 PNG 的每帧像素开销）
+    ctx.save();
+    ctx.fillStyle = 'rgba(24, 34, 56, 0.14)';
+    ctx.beginPath();
+    ctx.roundRect(-8, -4, worldWidth + 16, worldHeight + 16, 20);
+    ctx.fill();
+
+    ctx.fillStyle = palette.ground;
+    ctx.fillRect(0, 0, worldWidth, worldHeight);
+
+    // 镂空拱窗底图：始终在原始洞口下方铺深色影院底色，即使屏幕被扛走也不会透出亮色地面
+    if (theme.screenFrameOverlay) {
+      ctx.fillStyle = '#0F172A';
+      ctx.fillRect(
+        cutoutBacking.x,
+        cutoutBacking.y,
+        cutoutBacking.width,
+        cutoutBacking.height
+      );
+    }
+
+    const svgImg = getMapSvgImage(mapSvg);
+    if (svgImg) {
+      if (viewBounds && svgImg.naturalWidth > 0 && svgImg.naturalHeight > 0) {
+        const dx0 = Math.max(0, viewBounds.minX);
+        const dy0 = Math.max(0, viewBounds.minY);
+        const dx1 = Math.min(worldWidth, viewBounds.maxX);
+        const dy1 = Math.min(worldHeight, viewBounds.maxY);
+        if (dx1 > dx0 && dy1 > dy0) {
+          const sx = (dx0 / worldWidth) * svgImg.naturalWidth;
+          const sy = (dy0 / worldHeight) * svgImg.naturalHeight;
+          const sw = ((dx1 - dx0) / worldWidth) * svgImg.naturalWidth;
+          const sh = ((dy1 - dy0) / worldHeight) * svgImg.naturalHeight;
+          ctx.drawImage(svgImg, sx, sy, sw, sh, dx0, dy0, dx1 - dx0, dy1 - dy0);
+        }
+      } else {
+        ctx.drawImage(svgImg, 0, 0, worldWidth, worldHeight);
+      }
+    }
+    ctx.restore();
+
+    // 画在 SVG 底图之上的可摆放家具（跳过底图自带家具，仅在编辑模式下提示原生座位热点）
+    const customFurniture = furniture.filter((f) => !f.builtInOnMap);
+    for (const item of customFurniture) {
+      if (item.type === 'rug_geo') drawFurnitureItem(ctx, item);
+    }
+    const nonRugs = customFurniture.filter((f) => f.type !== 'rug_geo').sort((a, b) => a.y - b.y);
+    for (const item of nonRugs) {
+      drawFurnitureItem(ctx, item);
+    }
+
+    if (isEditingScene) {
+      for (const item of furniture) {
+        if (!item.builtInOnMap || !item.sittable) continue;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(245, 137, 39, 0.72)';
+        ctx.fillStyle = 'rgba(255, 250, 240, 0.36)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, 20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    return;
+  }
 
   // Outer floor base
   ctx.fillStyle = palette.ground;
@@ -1430,17 +1584,20 @@ function drawNpc(
 
   // 名字：比玩家淡一档，蹦跳或被举起时轻轻跟着浮动
   ctx.save();
-  ctx.font = '600 10px "Plus Jakarta Sans", "PingFang SC", sans-serif';
+  const npcLabelPx = scale > 1.35 ? 12 : 10;
+  ctx.font = `600 ${npcLabelPx}px "Plus Jakarta Sans", "PingFang SC", sans-serif`;
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   const jumpLiftPx = bones ? bones.liftY * rigScale * 0.75 : 0;
   const labelY = py - h * 0.78 - jumpLiftPx;
   const tw = ctx.measureText(NPC.name).width;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
+  const lh = scale > 1.35 ? 19 : 14;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.74)';
   ctx.beginPath();
-  ctx.roundRect(px - tw / 2 - 4, labelY - 9, tw + 8, 14, 7);
+  ctx.roundRect(px - tw / 2 - 6, labelY - lh / 2, tw + 12, lh, lh / 2);
   ctx.fill();
-  ctx.fillStyle = 'rgba(24, 24, 27, 0.62)';
-  ctx.fillText(NPC.name, px, labelY + 1);
+  ctx.fillStyle = 'rgba(24, 24, 27, 0.74)';
+  ctx.fillText(NPC.name, px, labelY + 0.5);
   ctx.restore();
 
   return pose;

@@ -43,7 +43,7 @@ import {
 import { pluginRegistry } from './lib/pluginRegistry';
 import { SpatialAudioManager } from './lib/spatialAudio';
 import { P2PRoom, isP2PEnabled, setLinkModePreference } from './lib/p2pRoom';
-import { CARRY, SCREEN_CARRY_TARGET, extractBiliPage } from './lib/roomCore';
+import { CARRY, SCREEN_CARRY_TARGET, extractBiliPage, getMapBounds } from './lib/roomCore';
 import { detectVideoLink } from './lib/videoLink';
 import { CHAT_BUBBLE_LIFETIME_MS } from './lib/chatBubble';
 import { extractBvid, fetchBilibiliMetaJsonp } from './lib/bilibiliMeta';
@@ -76,9 +76,10 @@ export default function App() {
   // 本机点播记录（不需要登录，按设备存）
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => loadWatchHistory());
 
+  const autoStart = new URLSearchParams(window.location.search).get('autostart') === '1';
   // Entry & Local Identity State
-  const [hasEnteredRoom, setHasEnteredRoom] = useState(false);
-  const [showAvatarModal, setShowAvatarModal] = useState(true);
+  const [hasEnteredRoom, setHasEnteredRoom] = useState(autoStart);
+  const [showAvatarModal, setShowAvatarModal] = useState(!autoStart);
   const [roomId, setRoomId] = useState<string>(() => getInitialRoomId());
   const [playerName, setPlayerName] = useState<string>(() => {
     return localStorage.getItem('koko_name') || `旅人${Math.floor(100 + Math.random() * 899)}`;
@@ -89,13 +90,20 @@ export default function App() {
       if (!saved) return DEFAULT_AVATAR;
       const parsed = JSON.parse(saved) as Partial<AvatarConfig>;
       // 旧版未修改过的默认小人平滑升级为新默认形象，保留用户已自定义过的穿搭
-      const isLegacyDefault =
+      const isLegacyV1Default =
         parsed.skinColor === '#FCD5B5' &&
         parsed.hairStyle === 'bob' &&
         parsed.hairColor === '#2C2623' &&
         parsed.outfitColor === '#FF5A36' &&
         parsed.accessory === 'headphones';
-      if (isLegacyDefault) return DEFAULT_AVATAR;
+      const isLegacyV2Default =
+        parsed.skinColor === '#FDB892' &&
+        parsed.hairStyle === 'bun' &&
+        parsed.hairColor === '#FF6268' &&
+        parsed.outfitStyle === 'hoodie' &&
+        parsed.outfitColor === '#FCE041' &&
+        parsed.accessory === 'none';
+      if (isLegacyV1Default || isLegacyV2Default) return DEFAULT_AVATAR;
       return { ...DEFAULT_AVATAR, ...parsed };
     } catch {
       return DEFAULT_AVATAR;
@@ -634,12 +642,13 @@ export default function App() {
             // 补一条自己的记录，否则画布上会「看不到自己的角色」。
             const initPlayers: PlayerState[] = Array.isArray(msg.players) ? [...msg.players] : [];
             if (msg.playerId && !initPlayers.some((p) => p.id === msg.playerId)) {
+              const initSpawn = getMapBounds(msg.mapId).spawnPoint;
               initPlayers.push({
                 id: msg.playerId,
                 name: playerName,
                 avatar,
-                x: 800,
-                y: 790,
+                x: initSpawn.x,
+                y: initSpawn.y,
                 dir: 'up',
                 isMoving: false,
                 isSitting: false,
@@ -1412,7 +1421,7 @@ export default function App() {
   const handlePlaceOrRemoveFurniture = (worldX: number, worldY: number) => {
     let updated: FurnitureItem[];
     if (selectedBrush === 'erase') {
-      const target = furniture.find((f) => Math.hypot(f.x - worldX, f.y - worldY) < 38);
+      const target = furniture.find((f) => !f.builtInOnMap && Math.hypot(f.x - worldX, f.y - worldY) < 38);
       if (!target) return;
       updated = furniture.filter((f) => f.id !== target.id);
     } else {

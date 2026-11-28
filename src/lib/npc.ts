@@ -205,6 +205,55 @@ const SCRIPT: Segment[] = [
   { kind: 'pause', anim: 'idle', at: WP.frontLeft, facing: 1, durationMs: 2400 },
 ];
 
+const MOONLIGHT_WP = {
+  stageL: { x: 400, y: 845 },
+  stageC: { x: 800, y: 835 },
+  stageR: { x: 1200, y: 845 },
+  rightTop: { x: 1445, y: 1025 },
+  rightHall: { x: 1365, y: 1375 },
+  plazaR: { x: 1140, y: 1555 },
+  plazaC: { x: 800, y: 1585 },
+  teaEdge: { x: 420, y: 1555 },
+  leftHall: { x: 235, y: 1375 },
+  leftTop: { x: 155, y: 1025 },
+  centerAisle: { x: 800, y: 1060 },
+} as const;
+
+const MOONLIGHT_SCRIPT: Segment[] = [
+  { kind: 'arc', anim: 'stroll', from: MOONLIGHT_WP.centerAisle, to: MOONLIGHT_WP.stageC, bend: -28, durationMs: 4200 },
+  { kind: 'pause', anim: 'look', at: MOONLIGHT_WP.stageC, facing: 1, durationMs: 3400 },
+
+  { kind: 'wave', anim: 'hop', from: MOONLIGHT_WP.stageC, to: MOONLIGHT_WP.stageR, amp: 14, waves: 1.5, durationMs: 4400 },
+  { kind: 'pause', anim: 'happy', at: MOONLIGHT_WP.stageR, facing: -1, durationMs: 2600 },
+
+  { kind: 'arc', anim: 'dash', from: MOONLIGHT_WP.stageR, to: MOONLIGHT_WP.rightTop, bend: -26, durationMs: 2400 },
+  { kind: 'arc', anim: 'tiptoe', from: MOONLIGHT_WP.rightTop, to: MOONLIGHT_WP.rightHall, bend: 18, durationMs: 4200 },
+  { kind: 'pause', anim: 'idle', at: MOONLIGHT_WP.rightHall, facing: -1, durationMs: 2200 },
+
+  { kind: 'arc', anim: 'tiptoe', from: MOONLIGHT_WP.rightHall, to: MOONLIGHT_WP.plazaR, bend: 24, durationMs: 3800 },
+  { kind: 'pause', anim: 'look', at: MOONLIGHT_WP.plazaR, facing: -1, durationMs: 3200 },
+
+  { kind: 'wave', anim: 'crawl', from: MOONLIGHT_WP.plazaR, to: MOONLIGHT_WP.plazaC, amp: 20, waves: 1.5, durationMs: 4600 },
+  { kind: 'circle', anim: 'hop', anchor: MOONLIGHT_WP.plazaC, cxOff: 0, cyOff: -52, dir: 1, durationMs: 4600 },
+  { kind: 'pause', anim: 'stretch', at: MOONLIGHT_WP.plazaC, facing: -1, durationMs: 3400 },
+
+  { kind: 'arc', anim: 'stroll', from: MOONLIGHT_WP.plazaC, to: MOONLIGHT_WP.teaEdge, bend: 32, durationMs: 4800 },
+  { kind: 'pause', anim: 'look', at: MOONLIGHT_WP.teaEdge, facing: 1, durationMs: 3000 },
+
+  { kind: 'arc', anim: 'hop', from: MOONLIGHT_WP.teaEdge, to: MOONLIGHT_WP.leftHall, bend: -24, durationMs: 3600 },
+  { kind: 'pause', anim: 'happy', at: MOONLIGHT_WP.leftHall, facing: 1, durationMs: 2600 },
+
+  { kind: 'arc', anim: 'dash', from: MOONLIGHT_WP.leftHall, to: MOONLIGHT_WP.leftTop, bend: 18, durationMs: 3000 },
+  { kind: 'arc', anim: 'tiptoe', from: MOONLIGHT_WP.leftTop, to: MOONLIGHT_WP.stageL, bend: -28, durationMs: 4000 },
+  { kind: 'pause', anim: 'stretch', at: MOONLIGHT_WP.stageL, facing: 1, durationMs: 3200 },
+
+  { kind: 'wave', anim: 'crawl', from: MOONLIGHT_WP.stageL, to: MOONLIGHT_WP.stageC, amp: 14, waves: 1.5, durationMs: 4600 },
+  { kind: 'pause', anim: 'idle', at: MOONLIGHT_WP.stageC, facing: -1, durationMs: 2400 },
+
+  { kind: 'arc', anim: 'hop', from: MOONLIGHT_WP.stageC, to: MOONLIGHT_WP.centerAisle, bend: 24, durationMs: 3200 },
+  { kind: 'pause', anim: 'idle', at: MOONLIGHT_WP.centerAisle, facing: 1, durationMs: 2400 },
+];
+
 // 预计算每段的起止时间戳，方便 O(log N) / 线性快速定位
 interface TimelineEntry {
   seg: Segment;
@@ -212,12 +261,18 @@ interface TimelineEntry {
   endMs: number;
 }
 
-const TIMELINE: TimelineEntry[] = [];
-let totalCycleMs = 0;
-for (const seg of SCRIPT) {
-  TIMELINE.push({ seg, startMs: totalCycleMs, endMs: totalCycleMs + seg.durationMs });
-  totalCycleMs += seg.durationMs;
+function buildTimeline(script: Segment[]): { timeline: TimelineEntry[]; totalMs: number } {
+  const timeline: TimelineEntry[] = [];
+  let totalMs = 0;
+  for (const seg of script) {
+    timeline.push({ seg, startMs: totalMs, endMs: totalMs + seg.durationMs });
+    totalMs += seg.durationMs;
+  }
+  return { timeline, totalMs };
 }
+
+const DEFAULT_PATROL = buildTimeline(SCRIPT);
+const MOONLIGHT_PATROL = buildTimeline(MOONLIGHT_SCRIPT);
 
 /** 平滑缓动：起止不突兀，中段保持均匀巡航感 */
 function easeInOutSoft(u: number): number {
@@ -281,15 +336,16 @@ function naturalBlinkAt(tMs: number): number {
   return 1;
 }
 
-export function npcPoseAt(elapsedMs: number): NpcPose {
+export function npcPoseAt(elapsedMs: number, mapId?: string): NpcPose {
+  const patrol = mapId === 'sunset-rooftop' ? MOONLIGHT_PATROL : DEFAULT_PATROL;
   const t = Math.max(0, elapsedMs);
-  const phase = t % totalCycleMs;
+  const phase = t % patrol.totalMs;
 
   // 找到当前所处剧本段
-  let entry = TIMELINE[0];
-  for (let i = 0; i < TIMELINE.length; i++) {
-    if (phase < TIMELINE[i].endMs) {
-      entry = TIMELINE[i];
+  let entry = patrol.timeline[0];
+  for (let i = 0; i < patrol.timeline.length; i++) {
+    if (phase < patrol.timeline[i].endMs) {
+      entry = patrol.timeline[i];
       break;
     }
   }

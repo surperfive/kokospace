@@ -149,7 +149,9 @@ export const SceneEditorModal: React.FC<SceneEditorModalProps> = ({
                         src={m.coverImage}
                         alt={m.name}
                         referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
+                        className={`w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300 ${
+                          m.mapSvg ? 'object-[50%_42%]' : ''
+                        }`}
                       />
                     </div>
                     <div className="p-3.5">

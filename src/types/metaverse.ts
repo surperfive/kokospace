@@ -1,9 +1,35 @@
 export type MapId = 'sunset-rooftop' | 'gallery-theater' | 'forest-cabin' | string;
 
-export type HairStyle = 'short' | 'bob' | 'bun' | 'wavy' | 'sidepart' | 'spiky' | string;
-export type EyeStyle = 'smile' | 'star' | 'cool' | 'gentle' | 'wink' | string;
-export type OutfitStyle = 'hoodie' | 'overalls' | 'knit' | 'techwear' | 'dress' | 'blazer' | string;
-export type AccessoryStyle = 'none' | 'headphones' | 'beret' | 'glasses' | 'crown' | 'catEars' | string;
+export type HairStyle =
+  | 'bob'
+  | 'sailor'
+  | 'explorer'
+  | 'punk'
+  | 'punkBandana'
+  | 'wuxia'
+  | string;
+export type EyeStyle =
+  | 'rainbow'
+  | 'happy'
+  | 'surprised'
+  | 'sailor'
+  | 'sailorHappy'
+  | 'explorer'
+  | 'punk'
+  | 'punkGrin'
+  | 'punkSerious'
+  | string;
+export type OutfitStyle = 'pleated' | 'sailor' | 'explorer' | 'punk' | 'wuxia' | string;
+export type AccessoryStyle = 'cap' | 'none' | string;
+
+export interface CustomAvatarLayers {
+  /** 自定义替换的「服装与身体」PNG dataURL */
+  body?: string;
+  /** 自定义替换的「头部与五官」PNG dataURL */
+  head?: string;
+  /** 自定义替换的「发型与帽子」PNG dataURL */
+  hairCap?: string;
+}
 
 export interface AvatarConfig {
   skinColor: string;
@@ -13,6 +39,7 @@ export interface AvatarConfig {
   outfitStyle: OutfitStyle;
   outfitColor: string;
   accessory: AccessoryStyle;
+  customLayers?: CustomAvatarLayers;
 }
 
 export type FurnitureType =
@@ -38,6 +65,8 @@ export interface FurnitureItem {
   label?: string;
   /** art_frame 专用：画作 PNG dataURL（本地画板导出，约 1KB） */
   art?: string;
+  /** 该座位/家具已直接绘制在地图 SVG 插画中，正常游玩时不重复渲染矢量图标 */
+  builtInOnMap?: boolean;
 }
 
 export interface MapZone {
@@ -55,6 +84,8 @@ export interface MapThemeDefinition {
   name: string;
   subtitle: string;
   coverImage: string;
+  /** 整张地图的高保真 SVG 矢量底图路径（如 /assets/maps/...svg） */
+  mapSvg?: string;
   worldWidth: number;
   worldHeight: number;
   palette: {
@@ -75,6 +106,16 @@ export interface MapThemeDefinition {
     y: number;
     width: number;
     height: number;
+  };
+  /** 嵌入底图镂空窗口时的前景遮罩（拱门/吊灯/音箱覆盖在视频边缘之上，保留透明洞口） */
+  screenFrameOverlay?: {
+    src: string;
+    /** 顶部控制条距离窗口顶部的安全百分比（避开麦克风挂牌） */
+    topInsetPct?: number;
+    /** 顶部控制条左右安全内边距百分比（避开两侧吊灯） */
+    topSideInsetPct?: number;
+    /** 底部控制条左右安全内边距百分比（避开左右音箱） */
+    bottomSideInsetPct?: number;
   };
   spawnPoint: { x: number; y: number };
   zones: MapZone[];

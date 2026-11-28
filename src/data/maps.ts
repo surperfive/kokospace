@@ -3,49 +3,52 @@ import { AvatarConfig, MapThemeDefinition, VideoQueueItem } from '../types/metav
 export const BUILTIN_MAPS: MapThemeDefinition[] = [
   {
     id: 'sunset-rooftop',
-    name: '日落天台影院',
-    subtitle: '暖石露台 · 懒人沙发 · 露天巨幕',
-    coverImage: '/src/assets/images/map_rooftop_cinema_1794673853273.jpg',
+    name: '月夜星河影音厅',
+    subtitle: '月夜拱窗巨幕 · 橙调双人沙发 · 暖灯休闲厅',
+    coverImage: '/assets/aistudio/changj_854a6fd9.png',
+    mapSvg: '/assets/aistudio/changj_854a6fd9.png',
     worldWidth: 1600,
-    worldHeight: 1050,
+    worldHeight: 2250,
     palette: {
-      ground: '#EFECE6',
-      groundAccent: '#E4DFD5',
-      gridLine: 'rgba(120, 113, 108, 0.12)',
-      wall: '#3F3C3A',
-      wallTrim: '#D6CFC4',
-      stageFloor: '#F7EFE6',
-      stageBorder: '#FF5A36',
-      seatingZone: 'rgba(255, 90, 54, 0.06)',
-      loungeZone: 'rgba(16, 185, 129, 0.06)',
-      screenFrame: '#18181B',
-      accent: '#FF5A36',
+      ground: '#E7E3DF',
+      groundAccent: '#D8E0EC',
+      gridLine: 'rgba(65, 82, 112, 0.08)',
+      wall: '#3B485E',
+      wallTrim: '#CBD5E1',
+      stageFloor: '#A9B6C8',
+      stageBorder: '#F58927',
+      seatingZone: 'rgba(245, 137, 39, 0.06)',
+      loungeZone: 'rgba(73, 135, 198, 0.06)',
+      screenFrame: '#0F172A',
+      accent: '#F58927',
     },
-    screenRect: { x: 460, y: 120, width: 680, height: 340 },
-    spawnPoint: { x: 800, y: 800 },
+    screenRect: { x: 281.48, y: 185.03, width: 1057.41, height: 574.53 },
+    screenFrameOverlay: {
+      src: '/assets/maps/stage_arch_frame.png',
+      topInsetPct: 8.2,
+      topSideInsetPct: 18,
+      bottomSideInsetPct: 9.5,
+    },
+    spawnPoint: { x: 800, y: 955 },
     zones: [
-      { id: 'stage', label: '舞台广播区 (全员可听)', type: 'stage', x: 520, y: 470, width: 560, height: 74 },
-      { id: 'seating', label: '中央观影沙发区', type: 'seating', x: 540, y: 555, width: 520, height: 210 },
-      { id: 'lounge', label: '天台茶歇闲聊角', type: 'lounge', x: 220, y: 690, width: 250, height: 150 },
+      { id: 'stage', label: '舞台广播区 (全员可听)', type: 'stage', x: 240, y: 760, width: 1120, height: 170 },
+      { id: 'seating', label: '中央月夜沙发区', type: 'seating', x: 140, y: 980, width: 1320, height: 610 },
+      { id: 'lounge', label: '自由漫步光影大厅', type: 'lounge', x: 160, y: 1660, width: 1280, height: 480 },
     ],
     defaultFurniture: [
-      { id: 'f1', type: 'rug_geo', x: 800, y: 630 },
-      { id: 'f2', type: 'beanbag_coral', x: 640, y: 580, sittable: true, label: '前排懒人沙发' },
-      { id: 'f3', type: 'beanbag_cream', x: 740, y: 580, sittable: true, label: '观影抱枕座' },
-      { id: 'f4', type: 'beanbag_coral', x: 860, y: 580, sittable: true, label: '观影抱枕座' },
-      { id: 'f5', type: 'beanbag_cream', x: 960, y: 580, sittable: true, label: '前排懒人沙发' },
-      { id: 'f6', type: 'sofa_coral', x: 690, y: 695, sittable: true, label: '双人观影沙发' },
-      { id: 'f7', type: 'sofa_slate', x: 910, y: 695, sittable: true, label: '双人观影沙发' },
-      { id: 'f8', type: 'plant_olive', x: 410, y: 310 },
-      { id: 'f9', type: 'plant_olive', x: 1190, y: 310 },
-      { id: 'f10', type: 'lamp_warm', x: 470, y: 670 },
-      { id: 'f11', type: 'lamp_warm', x: 1130, y: 670 },
-      { id: 'f12', type: 'table_round', x: 350, y: 760 },
-      { id: 'f13', type: 'beanbag_cream', x: 280, y: 760, sittable: true, label: '茶歇角' },
-      { id: 'f14', type: 'beanbag_coral', x: 420, y: 760, sittable: true, label: '茶歇角' },
+      { id: 'm1', type: 'sofa_coral', x: 370, y: 1210, sittable: true, builtInOnMap: true, label: '左侧橙调沙发' },
+      { id: 'm2', type: 'sofa_coral', x: 505, y: 1175, sittable: true, builtInOnMap: true, label: '左侧橙调沙发' },
+      { id: 'm3', type: 'sofa_coral', x: 1095, y: 1175, sittable: true, builtInOnMap: true, label: '右侧橙调沙发' },
+      { id: 'm4', type: 'sofa_coral', x: 1230, y: 1210, sittable: true, builtInOnMap: true, label: '右侧橙调沙发' },
+      { id: 'm5', type: 'beanbag_cream', x: 440, y: 1396, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
+      { id: 'm6', type: 'beanbag_cream', x: 596, y: 1500, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
+      { id: 'm7', type: 'beanbag_cream', x: 1028, y: 1500, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
+      { id: 'm8', type: 'beanbag_cream', x: 1176, y: 1396, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
     ],
     obstacles: [
-      { x: 460, y: 120, width: 680, height: 340 },
+      { x: 281.48, y: 185.03, width: 1057.41, height: 574.53 },
+      { x: 0, y: 0, width: 1600, height: 755 },
+      { x: 620, y: 1240, width: 360, height: 135 },
     ],
   },
   {
@@ -178,18 +181,18 @@ export const BUILTIN_VIDEOS: VideoQueueItem[] = [
 ];
 
 export const DEFAULT_AVATAR: AvatarConfig = {
-  skinColor: '#FDB892',
-  hairStyle: 'bun',
-  hairColor: '#FF6268',
-  eyeStyle: 'smile',
-  outfitStyle: 'hoodie',
-  outfitColor: '#FCE041',
-  accessory: 'none',
+  skinColor: '#FCE2D4',
+  hairStyle: 'bob',
+  hairColor: '#FFE338',
+  eyeStyle: 'rainbow',
+  outfitStyle: 'pleated',
+  outfitColor: '#4589E8',
+  accessory: 'cap',
 };
 
-export const SKIN_PALETTE = ['#FDB892', '#FFE0C8', '#F6C6A5', '#E29E79', '#B97856'];
-export const HAIR_PALETTE = ['#FF6268', '#3B2C2A', '#6D4735', '#E88346', '#F4B942', '#4E82D8', '#B77CF0', '#EAE6E1'];
-export const OUTFIT_PALETTE = ['#FCE041', '#FF6E59', '#3886C4', '#4DB888', '#8F6EE8', '#353844', '#F47EA6'];
+export const SKIN_PALETTE = ['#FCE2D4', '#FFEAD9', '#F6C8AD', '#E2A17E', '#BA7B59'];
+export const HAIR_PALETTE = ['#FFE338', '#332934', '#754C3B', '#FF7688', '#F2944B', '#5894EE', '#B580F5', '#F3EFEA'];
+export const OUTFIT_PALETTE = ['#4589E8', '#FF6B7A', '#F5B82E', '#3EC495', '#8C6CF0', '#393E4F', '#FF8749'];
 
 export const BUILTIN_REACTIONS = [
   { emoji: '❤️', label: '比心' },

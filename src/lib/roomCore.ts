@@ -48,6 +48,8 @@ export interface RoomFurnitureItem {
   rotation?: number;
   sittable?: boolean;
   label?: string;
+  art?: string;
+  builtInOnMap?: boolean;
 }
 
 export interface RoomVideoItem {
@@ -89,33 +91,85 @@ export const CARRY = {
   screenMinY: 464,
   screenMaxY: 980,
   /** 离巨幕多近才能扛起来（到屏幕矩形的距离） */
-  screenReach: 140,
+  screenReach: 180,
   /** 离另一个人多近才能把对方背起来 */
   playerReach: 110,
   /** 离见习修女多近才能把她举起来 */
   npcReach: 115,
   /**
    * 巨幕底边的活动范围（世界坐标）。
-   * 地板是 40~1560 / 60~1050。底边下限 420 是为了让屏幕能整个举过玩家头顶
-   * （玩家站屏幕下方时脚底约 470，头顶点 430），代价是最高位时屏幕顶边
-   * 会越过地板上沿约 40px 挂到墙上——比糊在人脸上好看得多。
    */
   anchorMinY: 420,
   anchorMaxY: 1010,
 } as const;
+
+export interface MapBounds {
+  worldWidth: number;
+  worldHeight: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  spawnPoint: { x: number; y: number };
+  defaultScreenAnchor: { x: number; y: number };
+  screenMinX: number;
+  screenMaxX: number;
+  screenMinY: number;
+  screenMaxY: number;
+  anchorMinY: number;
+  anchorMaxY: number;
+}
+
+export function getMapBounds(mapId?: string): MapBounds {
+  if (mapId === 'sunset-rooftop') {
+    return {
+      worldWidth: 1600,
+      worldHeight: 2250,
+      minX: 85,
+      maxX: 1515,
+      minY: 765,
+      maxY: 2165,
+      spawnPoint: { x: 800, y: 955 },
+      defaultScreenAnchor: { x: 810, y: 760 },
+      screenMinX: 440,
+      screenMaxX: 1160,
+      screenMinY: 770,
+      screenMaxY: 2165,
+      anchorMinY: 600,
+      anchorMaxY: 2121,
+    };
+  }
+  return {
+    worldWidth: 1600,
+    worldHeight: 1050,
+    minX: 80,
+    maxX: 1520,
+    minY: 120,
+    maxY: 980,
+    spawnPoint: { x: 800, y: 790 },
+    defaultScreenAnchor: { x: 800, y: 460 },
+    screenMinX: 440,
+    screenMaxX: 1160,
+    screenMinY: 464,
+    screenMaxY: 980,
+    anchorMinY: 420,
+    anchorMaxY: 1010,
+  };
+}
 
 /** `carryTarget` 里代表巨幕的哨兵值 */
 export const SCREEN_CARRY_TARGET = '@screen';
 /** `carryTarget` 里代表巡逻 NPC（见习修女）的哨兵值 */
 export const NPC_CARRY_TARGET = '@npc';
 
-/** 三张地图的 screenRect 都是 x460 y120 680×340，底边中心就是 (800, 460) */
-export const DEFAULT_SCREEN_ANCHOR = { x: 800, y: 460 };
+/** 默认地图 screenRect 底边中心 */
+export const DEFAULT_SCREEN_ANCHOR = { x: 800, y: 630 };
 
-function clampScreenAnchor(x: number, y: number): { x: number; y: number } {
+function clampScreenAnchor(x: number, y: number, mapId?: string): { x: number; y: number } {
+  const b = getMapBounds(mapId);
   return {
-    x: Math.max(CARRY.screenMinX, Math.min(CARRY.screenMaxX, Math.round(x))),
-    y: Math.max(CARRY.anchorMinY, Math.min(CARRY.anchorMaxY, Math.round(y))),
+    x: Math.max(b.screenMinX, Math.min(b.screenMaxX, Math.round(x))),
+    y: Math.max(b.anchorMinY, Math.min(b.anchorMaxY, Math.round(y))),
   };
 }
 
@@ -158,13 +212,13 @@ export type Outbound =
   | { kind: 'all'; payload: unknown; excludeId?: string };
 
 export const DEFAULT_AVATAR: RoomAvatar = {
-  skinColor: '#FDB892',
-  hairStyle: 'bun',
-  hairColor: '#FF6268',
-  eyeStyle: 'smile',
-  outfitStyle: 'hoodie',
-  outfitColor: '#FCE041',
-  accessory: 'none',
+  skinColor: '#FCE2D4',
+  hairStyle: 'bob',
+  hairColor: '#FFE338',
+  eyeStyle: 'rainbow',
+  outfitStyle: 'pleated',
+  outfitColor: '#4589E8',
+  accessory: 'cap',
 };
 
 export const DEFAULT_PLAYLIST: RoomVideoItem[] = [
@@ -198,20 +252,14 @@ export const DEFAULT_PLAYLIST: RoomVideoItem[] = [
 
 export const DEFAULT_MAP_FURNITURE: Record<string, RoomFurnitureItem[]> = {
   'sunset-rooftop': [
-    { id: 'f1', type: 'rug_geo', x: 800, y: 630 },
-    { id: 'f2', type: 'beanbag_coral', x: 640, y: 580, sittable: true, label: '前排懒人沙发' },
-    { id: 'f3', type: 'beanbag_cream', x: 740, y: 580, sittable: true, label: '观影抱枕座' },
-    { id: 'f4', type: 'beanbag_coral', x: 860, y: 580, sittable: true, label: '观影抱枕座' },
-    { id: 'f5', type: 'beanbag_cream', x: 960, y: 580, sittable: true, label: '前排懒人沙发' },
-    { id: 'f6', type: 'sofa_coral', x: 690, y: 695, sittable: true, label: '双人观影沙发' },
-    { id: 'f7', type: 'sofa_slate', x: 910, y: 695, sittable: true, label: '双人观影沙发' },
-    { id: 'f8', type: 'plant_olive', x: 410, y: 310 },
-    { id: 'f9', type: 'plant_olive', x: 1190, y: 310 },
-    { id: 'f10', type: 'lamp_warm', x: 470, y: 670 },
-    { id: 'f11', type: 'lamp_warm', x: 1130, y: 670 },
-    { id: 'f12', type: 'table_round', x: 350, y: 760 },
-    { id: 'f13', type: 'beanbag_cream', x: 280, y: 760, sittable: true, label: '茶歇角' },
-    { id: 'f14', type: 'beanbag_coral', x: 420, y: 760, sittable: true, label: '茶歇角' },
+    { id: 'm1', type: 'sofa_coral', x: 370, y: 1210, sittable: true, builtInOnMap: true, label: '左侧橙调沙发' },
+    { id: 'm2', type: 'sofa_coral', x: 505, y: 1175, sittable: true, builtInOnMap: true, label: '左侧橙调沙发' },
+    { id: 'm3', type: 'sofa_coral', x: 1095, y: 1175, sittable: true, builtInOnMap: true, label: '右侧橙调沙发' },
+    { id: 'm4', type: 'sofa_coral', x: 1230, y: 1210, sittable: true, builtInOnMap: true, label: '右侧橙调沙发' },
+    { id: 'm5', type: 'beanbag_cream', x: 440, y: 1396, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
+    { id: 'm6', type: 'beanbag_cream', x: 596, y: 1500, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
+    { id: 'm7', type: 'beanbag_cream', x: 1028, y: 1500, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
+    { id: 'm8', type: 'beanbag_cream', x: 1176, y: 1396, sittable: true, builtInOnMap: true, label: '前排圆蒲团' },
   ],
   'gallery-theater': [
     { id: 'g1', type: 'rug_geo', x: 800, y: 630 },
@@ -409,13 +457,14 @@ export class RoomCore {
     // 重连（换连接方式、断线重进）时沿用原来的位置和状态。
     // 否则「直连切云端」会让全屋人瞬间被传送回出生点，看起来像集体掉线重进。
     const existing = this.players.get(playerId);
+    const bounds = getMapBounds(this.mapId);
     const player: RoomPlayer = {
       id: playerId,
       uid: typeof msg.uid === 'string' ? msg.uid.slice(0, 128) : null,
       name: clampText(msg.name, `旅人 ${playerId.slice(-4)}`, 24),
       avatar,
-      x: existing?.x ?? 800 + spawnOffset,
-      y: existing?.y ?? 790,
+      x: existing?.x ?? bounds.spawnPoint.x + spawnOffset,
+      y: existing?.y ?? bounds.spawnPoint.y,
       dir: existing?.dir ?? 'up',
       isMoving: false,
       isSitting: existing?.isSitting ?? false,
@@ -478,15 +527,16 @@ export class RoomCore {
       const x = Number(msg.x);
       const y = Number(msg.y);
       const carryingScreen = me.carryTarget === SCREEN_CARRY_TARGET;
+      const bounds = getMapBounds(this.mapId);
       if (Number.isFinite(x) && Number.isFinite(y)) {
         if (carryingScreen) {
           // 扛着巨幕时只能走到「屏幕刚好还完整落在地板里」的范围。
           // 抓取时已经把玩家推到合法范围内，这里直接硬夹，避免再往屏幕底下钻。
-          me.x = Math.max(CARRY.screenMinX, Math.min(CARRY.screenMaxX, x));
-          me.y = Math.max(CARRY.screenMinY, Math.min(CARRY.screenMaxY, y));
+          me.x = Math.max(bounds.screenMinX, Math.min(bounds.screenMaxX, x));
+          me.y = Math.max(bounds.screenMinY, Math.min(bounds.screenMaxY, y));
         } else {
-          me.x = Math.max(80, Math.min(1520, x));
-          me.y = Math.max(120, Math.min(980, y));
+          me.x = Math.max(bounds.minX, Math.min(bounds.maxX, x));
+          me.y = Math.max(bounds.minY, Math.min(bounds.maxY, y));
         }
       }
       if (['up', 'down', 'left', 'right'].includes(msg.dir)) me.dir = msg.dir;
@@ -498,7 +548,7 @@ export class RoomCore {
       // 扛着屏幕：屏幕底边中心跟着走，顺手把新位置塞进这条消息里一起广播
       let screenAnchor: { x: number; y: number } | undefined;
       if (carryingScreen) {
-        this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift);
+        this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift, this.mapId);
         screenAnchor = this.screenAnchor;
       } else if (me.carryTarget && me.carryTarget !== NPC_CARRY_TARGET) {
         const carried = this.players.get(me.carryTarget);
@@ -832,11 +882,18 @@ export class RoomCore {
     if (type === 'scene:update') {
       if (typeof msg.mapId === 'string' && msg.mapId.trim()) {
         const nextMapId = msg.mapId.trim().slice(0, 48);
-        // 换地图：巨幕回到新地图的默认位置，正在扛屏的人松手
+        // 换地图：巨幕回到新地图的默认位置，正在扛屏的人松手，并将越界玩家放回出生点
         if (nextMapId !== this.mapId) {
           this.screenAnchor = null;
+          const nextBounds = getMapBounds(nextMapId);
           for (const p of this.players.values()) {
             if (p.carryTarget === SCREEN_CARRY_TARGET) p.carryTarget = null;
+            if (p.y < nextBounds.minY || p.y > nextBounds.maxY) {
+              p.x = nextBounds.spawnPoint.x;
+              p.y = nextBounds.spawnPoint.y;
+              p.isSitting = false;
+              p.seatId = null;
+            }
           }
         }
         this.mapId = nextMapId;
@@ -947,7 +1004,8 @@ export class RoomCore {
       for (const p of this.players.values()) {
         if (p.carryTarget === SCREEN_CARRY_TARGET) return [];
       }
-      const anchor = this.screenAnchor ?? DEFAULT_SCREEN_ANCHOR;
+      const bounds = getMapBounds(this.mapId);
+      const anchor = this.screenAnchor ?? bounds.defaultScreenAnchor;
       if (distanceToScreen(me.x, me.y, anchor) > CARRY.screenReach) return [];
       // 只能从屏幕正面（下方）往上顶。站在屏幕背后去抓会把屏幕举到人身前，
       // 人反而被整块盖住，看起来像穿模。
@@ -958,9 +1016,9 @@ export class RoomCore {
       me.seatId = null;
       me.isMoving = false;
       // 抓取时人可能贴得比较近，退半步让屏幕能整个举过头顶（一般不超过 40px）
-      me.y = Math.max(CARRY.screenMinY, Math.min(CARRY.screenMaxY, me.y));
-      me.x = Math.max(CARRY.screenMinX, Math.min(CARRY.screenMaxX, me.x));
-      this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift);
+      me.y = Math.max(bounds.screenMinY, Math.min(bounds.screenMaxY, me.y));
+      me.x = Math.max(bounds.screenMinX, Math.min(bounds.screenMaxX, me.x));
+      this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift, this.mapId);
       return [
         {
           kind: 'all',
@@ -1046,8 +1104,9 @@ export class RoomCore {
     me.carryTarget = null;
     const out: Outbound[] = [];
 
+    const bounds = getMapBounds(this.mapId);
     if (target === SCREEN_CARRY_TARGET) {
-      this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift);
+      this.screenAnchor = clampScreenAnchor(me.x, me.y - CARRY.screenLift, this.mapId);
       out.push({
         kind: 'all',
         payload: { type: 'screen:moved', anchor: this.screenAnchor, carrierId: null },
@@ -1057,8 +1116,8 @@ export class RoomCore {
       if (other) {
         other.carriedBy = null;
         other.isMoving = false;
-        other.x = Math.max(80, Math.min(1520, me.x + 42));
-        other.y = Math.max(120, Math.min(980, me.y + 6));
+        other.x = Math.max(bounds.minX, Math.min(bounds.maxX, me.x + 42));
+        other.y = Math.max(bounds.minY, Math.min(bounds.maxY, me.y + 6));
         out.push({
           kind: 'all',
           payload: {
@@ -1091,10 +1150,11 @@ export class RoomCore {
     const carrierId = me.carriedBy;
     if (!carrierId) return [];
     const carrier = this.players.get(carrierId);
+    const bounds = getMapBounds(this.mapId);
     me.carriedBy = null;
     me.isMoving = false;
-    me.x = Math.max(80, Math.min(1520, (carrier?.x ?? me.x) + 42));
-    me.y = Math.max(120, Math.min(980, (carrier?.y ?? me.y) + 6));
+    me.x = Math.max(bounds.minX, Math.min(bounds.maxX, (carrier?.x ?? me.x) + 42));
+    me.y = Math.max(bounds.minY, Math.min(bounds.maxY, (carrier?.y ?? me.y) + 6));
     if (carrier && carrier.carryTarget === me.id) carrier.carryTarget = null;
 
     const out: Outbound[] = [
@@ -1320,7 +1380,7 @@ export class RoomCore {
     if (state.mapId) this.mapId = state.mapId;
     if (Array.isArray(state.furniture)) this.furniture = state.furniture.slice(0, 40);
     if (state.screenAnchor && Number.isFinite(state.screenAnchor.x) && Number.isFinite(state.screenAnchor.y)) {
-      this.screenAnchor = clampScreenAnchor(state.screenAnchor.x, state.screenAnchor.y);
+      this.screenAnchor = clampScreenAnchor(state.screenAnchor.x, state.screenAnchor.y, this.mapId);
     } else if (state.screenAnchor === null) {
       this.screenAnchor = null;
     }
